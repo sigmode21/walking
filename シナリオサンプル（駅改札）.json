@@ -1,0 +1,328 @@
+{
+ "app": "walking-sim-prototype",
+ "version": 1,
+ "name": "シナリオサンプル（駅改札）",
+ "params": {
+  "durMin": 60,
+  "speed": 1.3,
+  "spill": true,
+  "heatMax": 3
+ },
+ "nodes": [
+  {
+   "id": "n1",
+   "type": "source",
+   "x": 10000,
+   "y": 14000,
+   "label": "ホーム1(上り)",
+   "rate": 5,
+   "trainInterval": 5,
+   "trainPax": 400,
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n2",
+   "type": "source",
+   "x": 10000,
+   "y": 30000,
+   "label": "ホーム2(下り)",
+   "rate": 5,
+   "trainInterval": 6,
+   "trainPax": 250,
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n3",
+   "type": "gate",
+   "x": 24000,
+   "y": 14000,
+   "label": "階段A(下り)",
+   "capPerLane": 143,
+   "lanes": 1,
+   "shape": "rect",
+   "w": 2400,
+   "h": 9000,
+   "share": "階段A",
+   "shareRole": "in",
+   "shareCap": 143
+  },
+  {
+   "id": "n4",
+   "type": "gate",
+   "x": 24000,
+   "y": 30000,
+   "label": "階段B(下り)",
+   "capPerLane": 143,
+   "lanes": 1,
+   "shape": "rect",
+   "w": 2400,
+   "h": 9000,
+   "share": "階段B",
+   "shareRole": "in",
+   "shareCap": 143
+  },
+  {
+   "id": "n5",
+   "type": "junction",
+   "x": 40000,
+   "y": 22000,
+   "label": "改札前通路",
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n6",
+   "type": "gate",
+   "x": 56000,
+   "y": 22000,
+   "label": "改札(出場)",
+   "capPerLane": 55,
+   "lanes": 4,
+   "shape": "rect",
+   "w": 12000,
+   "h": 9000,
+   "share": "改札",
+   "shareRole": "in",
+   "shareCap": 220
+  },
+  {
+   "id": "n7",
+   "type": "junction",
+   "x": 70000,
+   "y": 22000,
+   "label": "コンコース",
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n8",
+   "type": "sink",
+   "x": 84000,
+   "y": 14000,
+   "label": "北口",
+   "outRate": 0,
+   "vehInterval": 0,
+   "vehCap": 100,
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n9",
+   "type": "sink",
+   "x": 84000,
+   "y": 30000,
+   "label": "南口",
+   "outRate": 0,
+   "vehInterval": 0,
+   "vehCap": 100,
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n10",
+   "type": "source",
+   "x": 84000,
+   "y": 43000,
+   "label": "駅入口(入場)",
+   "rate": 45,
+   "trainInterval": 0,
+   "trainPax": 0,
+   "shape": "circle",
+   "r": 1400
+  },
+  {
+   "id": "n11",
+   "type": "gate",
+   "x": 56000,
+   "y": 43000,
+   "label": "改札(入場)",
+   "capPerLane": 55,
+   "lanes": 4,
+   "shape": "rect",
+   "w": 12000,
+   "h": 6000,
+   "balance": true,
+   "share": "改札",
+   "shareRole": "out",
+   "shareCap": 220
+  },
+  {
+   "id": "n12",
+   "type": "gate",
+   "x": 32000,
+   "y": 38000,
+   "label": "階段A(上り)",
+   "capPerLane": 123,
+   "lanes": 1,
+   "shape": "rect",
+   "w": 2400,
+   "h": 9000,
+   "share": "階段A",
+   "shareRole": "out",
+   "shareCap": 143
+  },
+  {
+   "id": "n13",
+   "type": "gate",
+   "x": 32000,
+   "y": 48000,
+   "label": "階段B(上り)",
+   "capPerLane": 123,
+   "lanes": 1,
+   "shape": "rect",
+   "w": 2400,
+   "h": 9000,
+   "share": "階段B",
+   "shareRole": "out",
+   "shareCap": 143
+  },
+  {
+   "id": "n14",
+   "type": "gate",
+   "x": 35000,
+   "y": 43000,
+   "label": "エスカレーター(上り)",
+   "capPerLane": 60,
+   "lanes": 1,
+   "shape": "rect",
+   "w": 1200,
+   "h": 9000
+  },
+  {
+   "id": "n15",
+   "type": "sink",
+   "x": 14000,
+   "y": 43000,
+   "label": "ホーム(乗車)",
+   "outRate": 0,
+   "vehInterval": 0,
+   "vehCap": 100,
+   "shape": "circle",
+   "r": 1400
+  }
+ ],
+ "links": [
+  {
+   "id": "l16",
+   "from": "n1",
+   "to": "n3",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l17",
+   "from": "n2",
+   "to": "n4",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l18",
+   "from": "n3",
+   "to": "n5",
+   "weight": 1,
+   "width": 4,
+   "pts": []
+  },
+  {
+   "id": "l19",
+   "from": "n4",
+   "to": "n5",
+   "weight": 1,
+   "width": 4,
+   "pts": []
+  },
+  {
+   "id": "l20",
+   "from": "n5",
+   "to": "n6",
+   "weight": 1,
+   "width": 6,
+   "pts": []
+  },
+  {
+   "id": "l21",
+   "from": "n6",
+   "to": "n7",
+   "weight": 1,
+   "width": 6,
+   "pts": []
+  },
+  {
+   "id": "l22",
+   "from": "n7",
+   "to": "n8",
+   "weight": 6,
+   "width": 4,
+   "pts": []
+  },
+  {
+   "id": "l23",
+   "from": "n7",
+   "to": "n9",
+   "weight": 4,
+   "width": 4,
+   "pts": []
+  },
+  {
+   "id": "l24",
+   "from": "n10",
+   "to": "n11",
+   "weight": 1,
+   "width": 4,
+   "pts": []
+  },
+  {
+   "id": "l25",
+   "from": "n11",
+   "to": "n14",
+   "weight": 2,
+   "width": 1.5,
+   "pts": []
+  },
+  {
+   "id": "l26",
+   "from": "n11",
+   "to": "n12",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l27",
+   "from": "n11",
+   "to": "n13",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l28",
+   "from": "n12",
+   "to": "n15",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l29",
+   "from": "n13",
+   "to": "n15",
+   "weight": 1,
+   "width": 3,
+   "pts": []
+  },
+  {
+   "id": "l30",
+   "from": "n14",
+   "to": "n15",
+   "weight": 1,
+   "width": 1.5,
+   "pts": []
+  }
+ ]
+}

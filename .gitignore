@@ -1,0 +1,11 @@
+# 内部作業ファイル（公開しない）
+プロンプト.txt
+AI用データ.txt
+*-report.png
+images.jpg
+walking-sim-result.csv
+
+# OS/エディタ
+.DS_Store
+Thumbs.db
+desktop.ini

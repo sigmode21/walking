@@ -1,0 +1,2697 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>人流検討ツール（検討用）</title>
+<style>
+  :root{
+    --bg:#1e2126; --panel:#282c34; --panel2:#2f343d; --border:#3d434e;
+    --text:#d8dee6; --sub:#9aa4b2; --accent:#4da3ff; --warn:#ff6b5e; --ok:#57c78a;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Segoe UI","Yu Gothic UI",sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; overflow:hidden;}
+  header{padding:6px 14px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:14px;}
+  header h1{font-size:15px; font-weight:600;}
+  #scnName{font-size:12px; color:var(--text); background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:2px 10px; white-space:nowrap;}
+  .disclaimer{font-size:11px; color:var(--warn); border:1px solid var(--warn); border-radius:4px; padding:2px 8px;}
+  #main{flex:1; display:flex; min-height:0;}
+  /* toolbar */
+  #toolbar{width:52px; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; gap:4px; padding:6px 4px;}
+  #toolbar button{width:44px; height:44px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:6px; cursor:pointer; font-size:10px; line-height:1.15; padding:2px;}
+  #toolbar button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  #toolbar button:hover{border-color:var(--accent);}
+  /* canvas */
+  #canvasWrap{flex:1; position:relative; min-width:0;}
+  canvas#cv{position:absolute; inset:0; width:100%; height:100%; display:block; background:#22262c;}
+  #hint{margin:0;}
+  #hint dt{color:var(--text); font-weight:600; margin-top:7px;}
+  #hint dt:first-child{margin-top:0;}
+  #hint dd{margin:1px 0 0; padding-left:8px; line-height:1.6; border-left:2px solid var(--border);}
+  #hint dd b{color:var(--text); font-weight:600;}
+  #btnFit{position:absolute; left:10px; bottom:10px; z-index:2; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:6px 12px; cursor:pointer; font-size:12px;}
+  #btnFit:hover{border-color:var(--accent);}
+  #legend{position:absolute; right:10px; top:8px; font-size:11px; color:var(--sub); background:rgba(30,33,38,.85); padding:6px 10px; border-radius:4px; pointer-events:none; line-height:1.6;}
+  /* side panel */
+  #side{width:300px; background:var(--panel); border-left:1px solid var(--border); overflow-y:auto; padding:10px; font-size:12px;}
+  #side h2{font-size:12px; color:var(--accent); margin:12px 0 6px; border-bottom:1px solid var(--border); padding-bottom:3px;}
+  #side h2:first-child{margin-top:0;}
+  .row{display:flex; align-items:center; gap:6px; margin:4px 0;}
+  .row label{flex:1; color:var(--sub);}
+  .row input[type=number], .row input[type=text], .row select{width:110px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:3px 6px; font-size:12px;}
+  .row input[type=range]{width:110px;}
+  button.btn{background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:5px 10px; cursor:pointer; font-size:12px;}
+  button.btn:hover{border-color:var(--accent);}
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  #summary{white-space:pre-wrap; background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:8px; font-size:11.5px; line-height:1.65;}
+  /* bottom */
+  #bottom{height:230px; background:var(--panel); border-top:1px solid var(--border); display:flex; flex-direction:column;}
+  #timebar{display:flex; align-items:center; gap:10px; padding:6px 12px; border-bottom:1px solid var(--border);}
+  #timebar input[type=range]{flex:1;}
+  #timeLabel{font-variant-numeric:tabular-nums; width:130px;}
+  #charts{flex:1; display:flex; min-height:0;}
+  .chartBox{flex:1; position:relative; border-right:1px solid var(--border);}
+  .chartBox:last-child{border-right:none;}
+  .chartBox canvas{position:absolute; inset:0; width:100%; height:100%;}
+  .chartTitle{position:absolute; left:8px; top:4px; font-size:11px; color:var(--sub); z-index:1;}
+  .small{font-size:10.5px; color:var(--sub);}
+</style>
+</head>
+<body>
+<header>
+  <h1>人流検討ツール（検討用）</h1>
+  <span id="scnName" style="display:none;"></span>
+</header>
+<div id="main">
+  <div id="toolbar">
+    <button data-mode="select" class="active" title="選択/移動">選択<br>移動</button>
+    <button data-mode="source" title="流入ノードを追加">流入<br>＋</button>
+    <button data-mode="junction" title="分岐・合流ノードを追加">分岐<br>＋</button>
+    <button data-mode="gate" title="滞留ノード=容量制約のあるボトルネック(改札・階段・受付・乗車口等)を追加">滞留<br>＋</button>
+    <button data-mode="sink" title="流出ノードを追加">流出<br>＋</button>
+    <button data-mode="link" title="リンク接続 (ノード2点を順にクリック)">接続<br>→</button>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <button id="btnFit" title="すべてのノードが収まるように拡大・縮小して表示">⤢ 全体表示</button>
+    <div id="legend">
+      <b>凡例</b><br>
+      ● 緑=流入 / 青=分岐 / 黄=滞留部(改札・階段等) / 灰=流出<br>
+      赤バー = 行列人数 / 接続線の色 = 流動量(青→赤)<br>
+      <div style="margin-top:4px">密度 0 <span style="display:inline-block;width:90px;height:9px;background:linear-gradient(90deg,#3355ff,#33cc88,#ffe14d,#ff4433);vertical-align:middle;border-radius:2px"></span> <span id="legMax">3</span>人/m²</div>
+    </div>
+  </div>
+  <div id="side">
+    <h2>シナリオ</h2>
+    <div class="row">
+      <button class="btn primary" id="btnRun" style="flex:1;">▶ 計算実行</button>
+      <button class="btn" id="btnNew" style="flex:1;" title="ノード・接続・下絵・計算結果をすべて消去し、設定を初期値に戻します">✚ 新規作成</button>
+    </div>
+    <div class="row">
+      <label style="flex:0 0 auto;white-space:nowrap;">施設プリセット</label>
+      <select id="preset" style="flex:1;min-width:0;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px;">
+        <option value="" disabled>— 選択してください —</option>
+        <option value="station">駅改札</option>
+        <option value="bus">イベント退場・バス乗場</option>
+        <option value="spa">温浴施設・更衣室</option>
+        <option value="school">学校の階段 (授業終了)</option>
+        <option value="cafeteria">学生食堂 (昼休み)</option>
+      </select>
+    </div>
+    <details id="presetHelp" style="display:none; margin:2px 0 6px;">
+      <summary class="small" style="cursor:pointer;">▸ このシナリオの説明 (クリックで開閉)</summary>
+      <div class="small" id="presetDescBody" style="white-space:pre-wrap; margin-top:4px; line-height:1.55;"></div>
+    </details>
+    <div class="row">
+      <button class="btn" id="btnSaveScn" style="flex:1;">シナリオ保存</button>
+      <button class="btn" id="btnLoadScn" style="flex:1;">シナリオ読込</button>
+      <input type="file" id="fileScn" accept=".json" style="display:none;">
+    </div>
+    <div class="small">ノード・接続・下記パラメータをJSONファイルに保存/読込します (DXF下絵は含みません。別途読み込んでください)。</div>
+    <div class="row"><label>シミュレーション時間 [分]</label><input type="number" id="pDur" value="120" min="1" max="180"></div>
+    <div class="row"><label>歩行速度 [m/s]</label><input type="number" id="pSpeed" value="1.2" step="0.1" min="0.3" max="2.0"></div>
+    <div class="row"><label>図面単位</label><span class="small">mm (DXF準拠 / 1000mm = 1m)</span></div>
+    <div class="row"><label>自動再計算</label><input type="checkbox" id="pAuto" checked></div>
+    <div class="row"><label>スピルバック考慮</label><input type="checkbox" id="pSpill"></div>
+    <div class="small">オン: 滞留エリア(面積×2.5人/m²)とリンク(長さ×幅×2.5人/m²)の収容量を上限とし、満杯時は上流へ詰まりが波及します。図面スケールとノード面積を実寸に合わせてから使用してください。</div>
+
+    <h2>下絵 (DXF / 画像)</h2>
+    <div class="row">
+      <input type="file" id="fileDxf" accept=".dxf,.png,.jpg,.jpeg" style="font-size:11px; width:100%;">
+    </div>
+    <div class="row"><label>DXFの作図単位</label>
+      <select id="pDxfUnit" style="width:110px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px;">
+        <option value="mm" selected>mm</option>
+        <option value="m">m</option>
+      </select>
+    </div>
+    <div class="row"><label>下絵を表示</label><input type="checkbox" id="pShowBg" checked></div>
+    <div class="row"><button class="btn" id="btnEditBg" style="flex:1;">✎ 下絵の編集</button></div>
+    <div id="bgEditPanel" style="display:none;">
+      <div class="row"><label>X移動 [m]</label><input type="number" id="bgX" value="0" step="0.5"></div>
+      <div class="row"><label>Y移動 [m]</label><input type="number" id="bgY" value="0" step="0.5"></div>
+      <div class="row"><label>拡大率 [%]</label><input type="number" id="bgScale" value="100" step="1" min="1"></div>
+      <div class="row"><label>回転 [°]</label><input type="number" id="bgRot" value="0" step="1"></div>
+      <div class="small">編集中: ドラッグで移動 / 四隅ドラッグで拡大縮小 / Shift+ドラッグで回転。数値入力でも調整できます。ホイール=画面ズーム、中ボタンドラッグ=画面移動。</div>
+    </div>
+    <div class="small">DXFはLINE/LWPOLYLINE/CIRCLE/ARCを下絵として表示します(自動認識はしません)。</div>
+
+    <h2>ヒートマップ</h2>
+    <div class="row"><label>ヒートマップを表示</label><input type="checkbox" id="pHeat" checked></div>
+    <div class="row"><label>表示モード</label>
+      <select id="pHeatMode" style="width:110px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px;">
+        <option value="now">現時刻の密度</option>
+        <option value="max">全時間の最大密度</option>
+      </select>
+    </div>
+    <div class="row"><label>スケール上限 [人/m²]</label><input type="number" id="pHeatMax" value="3" min="0.5" step="0.5"></div>
+    <div class="row"><label>不透明度</label><input type="range" id="pHeatAlpha" min="0.1" max="1" step="0.05" value="0.7"></div>
+    <div class="row"><label>歩行者ドット表示</label><input type="checkbox" id="pDots"></div>
+    <div class="small">各リンクの通路幅[m]から密度[人/m²]を算出し図面上に着色します。行列は滞留密度2.5人/m²の帯としてボトルネック上流側へ伸ばして表示します。歩行者ドットは歩行中の人 (まばらに流れる点) と行列 (密に並ぶ点) を密度に応じた色・数で表す表示専用の演出です (計算には影響しません。既定オフ)。</div>
+
+    <h2 id="propTitle">プロパティ (未選択)</h2>
+    <div id="props"><div class="small">ノードまたはリンクをクリックすると編集できます。</div></div>
+
+    <h2>結果サマリー</h2>
+    <div id="summary">計算実行を押すと結果が表示されます。</div>
+    <div class="row" style="margin-top:6px;">
+      <button class="btn" id="btnCopyAI" style="flex:1;" title="結果JSONをクリップボードにコピー (AIによる解釈用・任意)">AI用データ</button>
+      <button class="btn" id="btnCsv" style="flex:1;">CSV出力</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnReport" style="flex:1;" title="現在の図面表示・グラフ4枚・結果サマリーを1枚のPNG画像に合成して保存します">レポート出力 (PNG)</button>
+    </div>
+    <div class="small">※ 計算は決定論的です。AIは結果JSONの解釈にのみ利用し、計算には関与しません。</div>
+
+    <h2>操作説明</h2>
+    <dl id="hint" class="small">
+      <dt>表示</dt>
+      <dd><b>ホイール</b> ズーム / <b>背景ドラッグ</b> パン</dd>
+      <dt>接続を作る</dt>
+      <dd>ノード → 空白クリックで折れ線 → ノードで確定</dd>
+      <dt>リンク選択中</dt>
+      <dd><b>ダブルクリック</b> 折れ点を追加 / <b>ドラッグ</b> 移動 / <b>右クリック</b> 折れ点を削除</dd>
+      <dt>キー操作</dt>
+      <dd><b>Del</b> 選択対象を削除 / <b>Ctrl+Z</b> 元に戻す / <b>Shift</b> 水平・垂直ロック / <b>Esc</b> キャンセル</dd>
+    </dl>
+  </div>
+</div>
+<div id="bottom">
+  <div id="timebar">
+    <button class="btn" id="btnPlay">▶ 再生</button>
+    <select id="pPlaySpeed" title="再生速度" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px;">
+      <option value="0.25">×0.25</option>
+      <option value="0.5">×0.5</option>
+      <option value="1" selected>×1</option>
+      <option value="2">×2</option>
+      <option value="4">×4</option>
+    </select>
+    <span id="timeLabel">t = 0:00 / 30:00</span>
+    <div id="sliderWrap" style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <canvas id="markerBar" title="緑=一斉到着 / 青=一斉出発(車両) / 赤帯=設備の定員満杯 (クリックでジャンプ)" style="width:100%; height:9px; cursor:pointer; display:block;"></canvas>
+      <input type="range" id="timeSlider" min="0" max="1800" value="0" style="width:100%;">
+    </div>
+  </div>
+  <div id="charts">
+    <div class="chartBox"><span class="chartTitle">行列人数 [人] (ボトルネック別)</span><canvas id="chQueue"></canvas></div>
+    <div class="chartBox"><span class="chartTitle">待ち時間 [分] (ボトルネック別)</span><canvas id="chWait"></canvas></div>
+    <div class="chartBox"><span class="chartTitle" id="chCumTitle">累積流入・流出 [人]</span><canvas id="chCum"></canvas></div>
+    <div class="chartBox"><span class="chartTitle" id="chOccTitle">設備の占有・在圏 [人]</span><canvas id="chOcc"></canvas></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   人流検討ツール Phase 1
+   - ネットワーク型・決定論的流体近似モデル
+   - dt = 1秒 の時間ステップで流量保存を解く
+   ※ 本ツールは社内設計検討用であり、避難安全検証等の
+     法的用途への使用を想定していません。
+========================================================= */
+
+// ---------- データモデル ----------
+let nodes = [];   // {id,type,x,y,label, rate?, trainInterval?, trainPax?, capPerLane?, lanes?,
+                  //  stayMin?(分岐の滞留時間), share?/shareRole?/poolSize?/shareCap?(滞留部の共用グループ)}
+let links = [];   // {id,from,to,weight}
+let nextId = 1;
+const SCALE = 0.001;   // 図面単位はmm固定: 1単位 = 0.001m
+const NODE_R = 1400;   // 既定ノード半径 1.4m (mm)
+
+function addNode(type, x, y, label){
+  const n = {id:"n"+(nextId++), type, x, y, label: label || defaultLabel(type)};
+  if(type==="source"){ n.rate=10; n.trainInterval=5; n.trainPax=300; }
+  if(type==="gate"){ n.capPerLane=40; n.lanes=3; n.shape="rect"; n.w=3000; n.h=2200; }
+  if(type==="sink"){ n.outRate=0; n.vehInterval=0; n.vehCap=100; }
+  if(!n.shape){ n.shape="circle"; n.r=NODE_R; }
+  nodes.push(n); return n;
+}
+function defaultLabel(type){
+  return {source:"流入", junction:"分岐", gate:"滞留部", sink:"流出"}[type] || "ノード";
+}
+function addLink(from, to, weight){
+  if(from===to) return null;
+  if(links.some(l=>l.from===from && l.to===to)) return null;
+  const l = {id:"l"+(nextId++), from, to, weight: weight||1, width: 3, pts: []};
+  links.push(l); return l;
+}
+function nodeById(id){ return nodes.find(n=>n.id===id); }
+
+// ---------- Undo 履歴 (ノード/リンク編集のスナップショット) ----------
+let history = [];
+const HISTORY_MAX = 50;
+function snapshot(){ return JSON.stringify({nodes, links, nextId}); }
+function commitHistory(snap){
+  history.push(snap);
+  if(history.length>HISTORY_MAX) history.shift();
+}
+function pushHistory(){ commitHistory(snapshot()); }
+function clearHistory(){ history = []; }
+function undo(){
+  if(!history.length) return;
+  const s = JSON.parse(history.pop());
+  nodes = s.nodes; links = s.links; nextId = s.nextId;
+  selected = null;
+  renderProps(); scheduleRun(); draw();
+}
+
+// ---------- 幾何ヘルパー ----------
+function linkPath(l){
+  const a=nodeById(l.from), b=nodeById(l.to);
+  if(!a||!b) return null;
+  return [{x:a.x,y:a.y}, ...(l.pts||[]), {x:b.x,y:b.y}];
+}
+function pathLen(path){
+  let s=0;
+  for(let i=0;i<path.length-1;i++) s+=Math.hypot(path[i+1].x-path[i].x, path[i+1].y-path[i].y);
+  return s;
+}
+function pointAtFrac(path, f){ // 折れ線上の位置 f∈[0,1] → {x,y,ang}
+  const total=pathLen(path);
+  let target=Math.max(0,Math.min(1,f))*total, acc=0;
+  for(let i=0;i<path.length-1;i++){
+    const dx=path[i+1].x-path[i].x, dy=path[i+1].y-path[i].y;
+    const seg=Math.hypot(dx,dy);
+    if(acc+seg>=target || i===path.length-2){
+      const u=seg>0?(target-acc)/seg:0;
+      return {x:path[i].x+dx*u, y:path[i].y+dy*u, ang:Math.atan2(dy,dx)};
+    }
+    acc+=seg;
+  }
+  return {x:path[0].x,y:path[0].y,ang:0};
+}
+function nodeBoundR(n){ // 描画補助用の外接半径
+  if(n.shape==="rect") return Math.hypot(n.w||3000,n.h||2200)/2;
+  if(n.shape==="poly" && n.pts && n.pts.length)
+    return Math.max(...n.pts.map(p=>Math.hypot(p.x,p.y)), NODE_R);
+  return n.r||NODE_R;
+}
+function nodeAreaM2(n, scale){ // ノード形状の面積 [m²]
+  let aPx;
+  if(n.shape==="rect") aPx=(n.w||3000)*(n.h||2200);
+  else if(n.shape==="poly" && n.pts && n.pts.length>2){
+    let s=0; const p=n.pts;
+    for(let i=0,j=p.length-1;i<p.length;j=i++) s+=(p[j].x+p[i].x)*(p[j].y-p[i].y);
+    aPx=Math.abs(s)/2;
+  } else aPx=Math.PI*Math.pow(n.r||NODE_R,2);
+  return aPx*scale*scale;
+}
+function hitTol(){ return 8/Math.min(view.k,1.5); } // 画面上約8px相当の許容量
+function pointInNode(n, wx, wy){
+  const dx=wx-n.x, dy=wy-n.y;
+  const tol=hitTol();
+  if(n.shape==="rect") return Math.abs(dx)<=(n.w||3000)/2+tol && Math.abs(dy)<=(n.h||2200)/2+tol;
+  if(n.shape==="poly" && n.pts && n.pts.length>2){
+    // point in polygon (ray casting)
+    let inside=false;
+    const pts=n.pts;
+    for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+      const xi=pts[i].x, yi=pts[i].y, xj=pts[j].x, yj=pts[j].y;
+      if(((yi>dy)!==(yj>dy)) && (dx < (xj-xi)*(dy-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside || Math.hypot(dx,dy)<=tol;
+  }
+  return Math.hypot(dx,dy)<=(n.r||NODE_R)+tol;
+}
+
+// ---------- サンプルシナリオ: 駅改札 (双方向) ----------
+// 出場: ホーム(列車パルス) → 階段(下り) → 改札前通路 → 改札(出場) → コンコース → 出口
+// 入場: 駅入口(定常) → 改札(入場) → 階段(上り) → ホーム(乗車)
+// 改札と階段は、入場・出場が同じ設備を使う (同一設備の共用処理能力で行列人数に応じて分け合う)
+function loadSample(){
+  nodes = []; links = []; nextId = 1;
+  const s1 = addNode("source", 100, 140, "ホーム1(上り)");
+  const s2 = addNode("source", 100, 300, "ホーム2(下り)");
+  const g1 = addNode("gate", 240, 140, "階段A(下り)");
+  const g2 = addNode("gate", 240, 300, "階段B(下り)");
+  const j1 = addNode("junction", 400, 220, "改札前通路");
+  const g3 = addNode("gate", 560, 220, "改札(出場)");
+  const j2 = addNode("junction", 700, 220, "コンコース");
+  const k1 = addNode("sink", 840, 140, "北口");
+  const k2 = addNode("sink", 840, 300, "南口");
+  const sIn= addNode("source", 840, 430, "駅入口(入場)");
+  const g4 = addNode("gate", 560, 430, "改札(入場)");
+  const g5 = addNode("gate", 320, 380, "階段A(上り)");
+  const g6 = addNode("gate", 320, 480, "階段B(上り)");
+  const g7 = addNode("gate", 350, 430, "エスカレーター(上り)");
+  const kIn= addNode("sink", 140, 430, "ホーム(乗車)");
+  // 中規模駅: 10両編成の降車400人/250人、日中の運転間隔5〜6分
+  s1.rate=5;  s1.trainInterval=5; s1.trainPax=400;
+  s2.rate=5;  s2.trainInterval=6; s2.trainPax=250;
+  // 入場側: 乗車客は定常的に到着 (ピーク帯45人/分)
+  sIn.rate=45; sIn.trainInterval=0; sIn.trainPax=0;
+  // 階段: 実幅2.4m、有効幅員2.2m(側壁・手すり分0.2m控除)で安全側に算定。
+  //   下り 65人/分/m × 2.2m ≒ 143人/分 / 上り 56人/分/m × 2.2m ≒ 123人/分
+  //   上り・下りは同じ階段を使うため同一設備とし、共用処理能力143人/分を行列人数比で分け合う
+  //   (降車ラッシュの下り流が階段を占有すると、乗車客がホームに上がれず滞留する現象を表現)
+  // 面積: 実幅2.4m × 水平投影長9m ≒ 21.6m² (階高約4.5mを勾配30°で上る想定+踊り場)
+  g1.capPerLane=143; g1.lanes=1; g1.w=2400; g1.h=9000; g1.share="階段A"; g1.shareRole="in";  g1.shareCap=143;
+  g2.capPerLane=143; g2.lanes=1; g2.w=2400; g2.h=9000; g2.share="階段B"; g2.shareRole="in";  g2.shareCap=143;
+  g5.capPerLane=123; g5.lanes=1; g5.w=2400; g5.h=9000; g5.share="階段A"; g5.shareRole="out"; g5.shareCap=143;
+  g6.capPerLane=123; g6.lanes=1; g6.w=2400; g6.h=9000; g6.share="階段B"; g6.shareRole="out"; g6.shareCap=143;
+  // エスカレーター (上り専用): 1000型・実効約60人/分。下り流と干渉しない定流量の輸送手段
+  g7.capPerLane=60; g7.lanes=1; g7.w=1200; g7.h=9000;
+  // 改札(入場)は混雑回避で分配: 階段が降車ラッシュで詰まっている間はエスカレーターへ人が流れる
+  g4.balance=true;
+  // 自動改札 (IC主体・双方向型): 55人/分/通路 × 4通路 = 220人/分 を入場・出場で共用。
+  // 各方向とも空いていれば全通路を使え、混雑時は行列人数に応じて通過能力を分け合う (共用処理能力)
+  // 面積: 出場側は改札前の人だまり広場を含め 12m×9m=108m²、入場側はコンコース側の人だまり 12m×6m=72m²
+  g3.capPerLane=55; g3.lanes=4; g3.w=12000; g3.h=9000;
+  g3.share="改札"; g3.shareRole="in";  g3.shareCap=220;
+  g4.capPerLane=55; g4.lanes=4; g4.w=12000; g4.h=6000;
+  g4.share="改札"; g4.shareRole="out"; g4.shareCap=220;
+  const L=(a,b,wt,wd)=>{ const l=addLink(a.id,b.id,wt); if(l&&wd) l.width=wd; return l; };
+  L(s1,g1,1,3); L(s2,g2,1,3);       // ホーム→階段(下り)
+  L(g1,j1,1,4); L(g2,j1,1,4);       // 階段→改札前通路 (幅4m)
+  L(j1,g3,1,6);                     // 改札前通路→改札 (幅6m)
+  L(g3,j2,1,6);                     // 改札→コンコース
+  L(j2,k1,6,4); L(j2,k2,4,4);       // 北口:南口 = 6:4
+  L(sIn,g4,1,4);                    // 駅入口→改札(入場)
+  L(g4,g7,2,1.5);                   // 改札(入場)→エスカレーター (空いていれば優先: 正規化重み2)
+  L(g4,g5,1,3); L(g4,g6,1,3);       // 改札(入場)→階段(上り)
+  L(g5,kIn,1,3); L(g6,kIn,1,3);     // 階段(上り)→ホーム
+  L(g7,kIn,1,1.5);                  // エスカレーター→ホーム
+  nodes.forEach(n=>{ n.x*=100; n.y*=100; }); // 配置座標をmmへ (1目盛=100mm)
+  // プリセット固有の設定: 時間軸60分(列車サイクル約10周期で周期的定常が読める) / 歩行速度1.3m/s(通勤者)
+  document.getElementById("pDur").value=60;
+  document.getElementById("pSpeed").value=1.3;
+  document.getElementById("pSpill").checked=true;
+  selected = null; simResult = null; clearHistory();
+  resetPlaybackForLoad();
+  fitView(); renderProps(); scheduleRun(); draw();
+}
+
+// ---------- シミュレーション本体 (決定論) ----------
+let simResult = null; // {T, dt, queue:{nodeId:[..]}, wait:{nodeId:[..]}, linkFlow:{linkId:[..]}, throughput:{}, meta}
+
+function runSim(){
+  const dt = 1; // 秒
+  const durMin = Math.max(1, +document.getElementById("pDur").value || 30);
+  const T = Math.round(durMin*60/dt);
+  const speed = Math.max(0.1, +document.getElementById("pSpeed").value || 1.2);
+  const scale = SCALE; // 図面単位mm固定
+
+  // リンク遅延(歩行時間)ステップ数
+  const delay = {};
+  for(const l of links){
+    const distM = pathLen(linkPath(l)) * scale;
+    delay[l.id] = Math.max(1, Math.round(distM/speed/dt));
+  }
+  const spill = document.getElementById("pSpill").checked;
+
+  // リンク流入履歴 (遅延線) と 収容量
+  const hist = {}, buf = {}, occDelay = {}, capLink = {};
+  for(const l of links){
+    hist[l.id] = new Float64Array(T+1);
+    buf[l.id] = 0;       // リンク下流端の滞留 (受け入れ待ち)
+    occDelay[l.id] = 0;  // 歩行中の人数
+    const lenM = pathLen(linkPath(l))*scale;
+    capLink[l.id] = Math.max(5, lenM*(l.width||3)*QUEUE_DENSITY);
+  }
+  const outLinks = {}, inLinks = {};
+  for(const n of nodes){
+    outLinks[n.id] = links.filter(l=>l.from===n.id);
+    inLinks[n.id]  = links.filter(l=>l.to===n.id);
+  }
+  // 混雑回避分配を行うノード (下流の空き具合に応じて送出先を選ぶ)
+  const balanceIds = new Set(nodes.filter(n=>n.balance).map(n=>n.id));
+
+  // 定常流入・定常流出の時間変化 (階段状プロファイル): "時刻[分]:人数/分" の列を [秒, 人/分] に変換
+  const rateProfiles = {};
+  for(const n of nodes) if((n.type==="source"||n.type==="sink") && n.rateProfile){
+    const pts=[];
+    for(const tok of String(n.rateProfile).split(/[,、\s]+/)){
+      const mm=/^(\d+(?:\.\d+)?)[:：](\d+(?:\.\d+)?)$/.exec(tok.trim());
+      if(mm) pts.push([+mm[1]*60, +mm[2]]);
+    }
+    if(pts.length){ pts.sort((a,b)=>a[0]-b[0]); rateProfiles[n.id]=pts; }
+  }
+  const rateAt=(pts,t)=>{ let v=0; for(const p of pts){ if(p[0]<=t) v=p[1]; else break; } return v; };
+
+  // 滞留ジャンクション (浴場・飲食等): 到着者を滞在時間分の遅延線で保持してから送出
+  const dwellHist = {}, dwellPend = {}, dwellOccNow = {}, dwellOccH = {};
+  for(const n of nodes) if(n.type==="junction" && (n.stayMin||0)>0){
+    dwellHist[n.id] = new Float64Array(T+1);
+    dwellPend[n.id] = 0; dwellOccNow[n.id] = 0;
+    dwellOccH[n.id] = new Float64Array(T+1);
+  }
+
+  // 行列を持つノード: 滞留ノード + 車両待ちのある流出ノード
+  const isQueueNode = n => n.type==="gate" ||
+    (n.type==="sink" && ((n.outRate||0)>0 || n.rateProfile || ((n.vehInterval||0)>0 && (n.vehCap||0)>0)));
+  const queue = {}, queueIn = {}, cumArr = {}, cumDep = {}, wait = {};
+  const gateQ = {}, gateMax = {};
+  for(const n of nodes) if(isQueueNode(n)){
+    queue[n.id]=new Float64Array(T+1); queueIn[n.id]=new Float64Array(T+1);
+    cumArr[n.id]=new Float64Array(T+1);
+    cumDep[n.id]=new Float64Array(T+1); wait[n.id]=new Float64Array(T+1);
+    gateQ[n.id]=0;
+    gateMax[n.id] = spill ? Math.max(1, nodeAreaM2(n,scale)*QUEUE_DENSITY) : Infinity;
+  }
+
+  // 共用グループ (更衣室・双方向改札等): 同一の室・設備として滞留面積と共用定員を共有する
+  // 共用定員(ロッカー等)は入側(shareRole="in")の入室時に占有、出側(shareRole="out")の退室完了時に解放
+  const poolSize = {}, poolOcc = {}, groupMembers = {}, groupAreaMax = {}, poolHist = {};
+  for(const n of nodes) if(n.type==="gate" && n.share){
+    poolSize[n.share] = Math.max(poolSize[n.share]||0, n.poolSize||0);
+    poolOcc[n.share] = 0;
+    if(!groupMembers[n.share]) groupMembers[n.share]=[];
+    groupMembers[n.share].push(n.id);
+  }
+  for(const g of Object.keys(groupMembers)){
+    groupAreaMax[g] = groupMembers[g].reduce((s,id)=>s+gateMax[id],0);
+    poolHist[g] = new Float64Array(T+1);
+  }
+  // 共用処理能力 (双方向改札・共用階段等): グループ全体の通過能力を行列人数に応じて分け合う
+  const groupCap = {};
+  for(const n of nodes) if(n.type==="gate" && n.share && (n.shareCap||0)>0)
+    groupCap[n.share] = Math.max(groupCap[n.share]||0, n.shareCap);
+  const linkFlow = {}; for(const l of links) linkFlow[l.id]=new Float64Array(T+1);
+  const throughput = {}; for(const n of nodes) if(n.type==="sink") throughput[n.id]=new Float64Array(T+1);
+  const srcHold = {}; for(const n of nodes) if(n.type==="source") srcHold[n.id]=0;
+
+  // 各ステップ
+  for(let t=0; t<T; t++){
+    // 1) 遅延線の出口 → リンク下流端バッファへ
+    for(const l of links){
+      const tt = t - delay[l.id];
+      const ex = tt>=0 ? hist[l.id][tt] : 0;
+      occDelay[l.id] -= ex;
+      buf[l.id] += ex;
+      linkFlow[l.id][t] = ex; // 人/秒
+    }
+    // 行列ノードの到着カウント (待ち時間計算用: リンク末端到着時点で計上)
+    for(const n of nodes) if(queue[n.id]){
+      let arr=0;
+      for(const l of inLinks[n.id]) arr += linkFlow[l.id][t];
+      cumArr[n.id][t+1] = cumArr[n.id][t] + arr;
+    }
+
+    // 共用処理能力の配分 (行列人数比で分け合う。全て空なら等分)
+    const capAlloc = {};
+    for(const g of Object.keys(groupCap)){
+      const ms = groupMembers[g];
+      const qs = ms.map(id=>gateQ[id] + inLinks[id].reduce((s,l)=>s+buf[l.id],0));
+      const tot = qs.reduce((a,b)=>a+b,0);
+      ms.forEach((id,i)=>{ capAlloc[id] = groupCap[g]/60*dt * (tot>1e-9 ? qs[i]/tot : 1/ms.length); });
+    }
+
+    // 送出ヘルパー: 下流リンクの空き容量を考慮して比例配分。実送出量を返す
+    function sendFrom(nid, amt){
+      const outs = outLinks[nid];
+      if(!outs.length || amt<=1e-12) return 0;
+      let sent=0;
+      if(balanceIds.has(nid) && outs.length>1){
+        // 混雑回避分配: 下流の混雑水位 (リンク上の人数+行列 を分配比で正規化) が
+        // 均されるように配分する (水位の低い=空いている方へ先に流す)。決定論的。
+        const items = outs.map(l=>({l, w:l.weight||1,
+          cong: occDelay[l.id]+buf[l.id]+(gateQ[l.to]||0)}));
+        items.sort((a,b)=>a.cong/a.w - b.cong/b.w);
+        const add=new Array(items.length).fill(0);
+        let rest=amt, wAcc=0;
+        for(let i=0;i<items.length && rest>1e-12;i++){
+          wAcc+=items[i].w;
+          const lvl=items[i].cong/items[i].w;
+          const nextLvl=(i+1<items.length)?items[i+1].cong/items[i+1].w:Infinity;
+          const need=nextLvl===Infinity?rest:(nextLvl-lvl)*wAcc;
+          const use=Math.min(rest,need);
+          for(let j=0;j<=i;j++) add[j]+=use*items[j].w/wAcc;
+          rest-=use;
+        }
+        for(let j=0;j<items.length;j++){
+          const l=items[j].l;
+          const room = spill ? Math.max(0, capLink[l.id]-occDelay[l.id]-buf[l.id]) : Infinity;
+          const x = Math.min(add[j], room);
+          hist[l.id][t] += x; occDelay[l.id] += x; sent += x;
+        }
+        return sent;
+      }
+      const wsum = outs.reduce((s,l)=>s+(l.weight||1),0);
+      for(const l of outs){
+        const want = amt*(l.weight||1)/wsum;
+        const room = spill ? Math.max(0, capLink[l.id]-occDelay[l.id]-buf[l.id]) : Infinity;
+        const x = Math.min(want, room);
+        hist[l.id][t] += x; occDelay[l.id] += x; sent += x;
+      }
+      return sent;
+    }
+    // 上流バッファから比例して取り出す
+    function takeFromIn(nid, amt){
+      const ins = inLinks[nid];
+      const avail = ins.reduce((s,l)=>s+buf[l.id],0);
+      const take = Math.min(avail, amt);
+      if(take<=1e-12) return 0;
+      for(const l of ins){ if(avail>0) buf[l.id] -= buf[l.id]/avail*take; }
+      return take;
+    }
+
+    // 2) 各ノードの処理
+    for(const n of nodes){
+      if(n.type==="source"){
+        // 定常流入 (時間変化プロファイルがあればそちらを優先)
+        let gen = (rateProfiles[n.id] ? rateAt(rateProfiles[n.id], t) : (n.rate||0))/60*dt;
+        // 一斉到着パルス: 到着後、放出時間(既定0.5分=列車降車相当)にわたり均等放出
+        // イベント退場・教室退出など、実際には数分かけて出てくる流れは放出時間を長く設定する
+        const iv = (n.trainInterval||0)*60, pax = n.trainPax||0;
+        const rel = Math.min(Math.max(1, Math.round((n.releaseMin||0.5)*60)), iv||1e9);
+        if(iv>0 && pax>0 && (t%iv)<rel) gen += pax/rel*dt;
+        srcHold[n.id] += gen;
+        srcHold[n.id] -= sendFrom(n.id, srcHold[n.id]); // 詰まれば発生源に滞留(ホーム待機)
+      } else if(n.type==="junction"){
+        if(dwellHist[n.id]){
+          // 滞留ジャンクション (浴場等): 到着者を受け入れ、滞在時間経過後に送出
+          const avail = inLinks[n.id].reduce((s,l)=>s+buf[l.id],0);
+          const got = takeFromIn(n.id, avail);
+          dwellHist[n.id][t] += got; dwellOccNow[n.id] += got;
+          const tt = t - Math.max(1, Math.round((n.stayMin||0)*60/dt));
+          const out = tt>=0 ? dwellHist[n.id][tt] : 0;
+          dwellOccNow[n.id] -= out;
+          dwellPend[n.id] += out;
+          dwellPend[n.id] -= sendFrom(n.id, dwellPend[n.id]); // 下流満杯時は退出待ちとして保持
+        } else {
+          const avail = inLinks[n.id].reduce((s,l)=>s+buf[l.id],0);
+          const sent = sendFrom(n.id, avail);
+          takeFromIn(n.id, sent); // 送れた分だけ上流バッファから引き取る
+        }
+      } else if(n.type==="gate"){
+        // エリアの空きの範囲で受け入れ (共用グループは同一室として在圏を合算し面積判定)
+        let room;
+        if(n.share && groupMembers[n.share]){
+          const occ = groupMembers[n.share].reduce((s,id)=>s+gateQ[id],0);
+          room = groupAreaMax[n.share] - occ;
+        } else {
+          room = gateMax[n.id] - gateQ[n.id];
+        }
+        // 入側は共用定員 (ロッカー等) の空きも制約 (入室時に占有)
+        if(n.share && n.shareRole!=="out" && (poolSize[n.share]||0)>0){
+          room = Math.min(room, poolSize[n.share] - poolOcc[n.share]);
+        }
+        const got = takeFromIn(n.id, room);
+        gateQ[n.id] += got;
+        // 占有カウンタは定員が設定された設備のみ更新 (定員0=無制限では追跡しない)
+        if(n.share && n.shareRole!=="out" && (poolSize[n.share]||0)>0) poolOcc[n.share] += got;
+        // 処理して下流へ (下流が詰まっていれば送れない)
+        let cap = (n.capPerLane||0)*(n.lanes||1)/60*dt;
+        if(capAlloc[n.id]!==undefined) cap = Math.min(cap, capAlloc[n.id]); // 共用処理能力の配分内
+        const served = sendFrom(n.id, Math.min(gateQ[n.id], cap));
+        gateQ[n.id] -= served;
+        // 出側は退室完了時に共用定員を解放
+        if(n.share && n.shareRole==="out" && (poolSize[n.share]||0)>0){
+          poolOcc[n.share] = Math.max(0, poolOcc[n.share]-served);
+        }
+        cumDep[n.id][t+1] = cumDep[n.id][t] + served;
+        queueIn[n.id][t+1] = gateQ[n.id];
+        // 行列人数 = エリア内 + 上流リンク末端で詰まっている人数
+        queue[n.id][t+1] = gateQ[n.id] + inLinks[n.id].reduce((s,l)=>s+buf[l.id],0);
+      } else if(n.type==="sink"){
+        if(!queue[n.id]){
+          // 常時流出: 到着した人は即時にはける
+          let got=0;
+          for(const l of inLinks[n.id]){ got += buf[l.id]; buf[l.id]=0; }
+          throughput[n.id][t+1] = throughput[n.id][t] + got;
+        } else {
+          // 流出制約あり: 定常流出 + 一斉出発 (指定間隔で指定人数を30秒で放出)
+          const room = gateMax[n.id] - gateQ[n.id];
+          gateQ[n.id] += takeFromIn(n.id, room);
+          // 定常流出 (時間変化プロファイルがあればそちらを優先)
+          let dep=(rateProfiles[n.id] ? rateAt(rateProfiles[n.id], t) : (n.outRate||0))/60*dt;
+          // 一斉出発: 出発間隔ごとに定員分を「放出時間」(既定0.5分)にわたり受け入れる
+          // (バス乗車のように停車中の数分かけて乗り込む流れは放出時間を長く設定する)
+          const iv=(n.vehInterval||0)*60, cap=n.vehCap||0;
+          const rel=Math.min(Math.max(1, Math.round((n.releaseMin||0.5)*60)), iv||1e9);
+          if(iv>0 && cap>0 && (t%iv)<rel) dep += cap/rel*dt;
+          const board = Math.min(gateQ[n.id], dep);
+          gateQ[n.id] -= board;
+          throughput[n.id][t+1] = throughput[n.id][t] + board;
+          cumDep[n.id][t+1] = cumDep[n.id][t] + board;
+          queueIn[n.id][t+1] = gateQ[n.id];
+          queue[n.id][t+1] = gateQ[n.id] + inLinks[n.id].reduce((s,l)=>s+buf[l.id],0);
+        }
+      }
+    }
+    // 共用ロッカー占有数・滞留ジャンクション在圏数の記録
+    for(const g of Object.keys(poolHist)) poolHist[g][t+1] = poolOcc[g];
+    for(const id of Object.keys(dwellOccH)) dwellOccH[id][t+1] = dwellOccNow[id] + dwellPend[id];
+  }
+
+  // 3) 待ち時間 (FIFO: 到着時累積 = 退出時累積 となる時刻差)
+  for(const gid of Object.keys(queue)){
+    const ca=cumArr[gid], cd=cumDep[gid];
+    let j=0;
+    for(let t=0; t<=T; t++){
+      const target = ca[t];
+      if(target<=0){ wait[gid][t]=0; continue; }
+      while(j<T && cd[j] < target - 1e-9) j++;
+      wait[gid][t] = Math.max(0, (j - t))/60; // 分
+      if(cd[T] < target - 1e-9) wait[gid][t] = (T-t)/60; // 時間内に捌けない
+    }
+  }
+
+  // 4) ヒートマップ用: リンク各サンプル点の最大在圏数と、ゲートの最大行列
+  const sampleMax = {};
+  for(const l of links){
+    const D = delay[l.id];
+    const sm = new Float64Array(D);
+    const h = hist[l.id];
+    for(let t=0; t<=T; t++){
+      for(let k=0; k<D; k++){
+        const tt=t-k; if(tt<0) break;
+        if(h[tt]>sm[k]) sm[k]=h[tt];
+      }
+    }
+    sampleMax[l.id]=sm;
+  }
+  const maxQueue = {};
+  for(const gid of Object.keys(queue)){
+    let m=0; const q=queue[gid];
+    for(let t=0;t<=T;t++) if(q[t]>m) m=q[t];
+    maxQueue[gid]=m;
+  }
+
+  simResult = {T, dt, queue, queueIn, wait, linkFlow, throughput, hist, sampleMax, maxQueue,
+    dwellOcc: dwellOccH, pools: {size: poolSize, hist: poolHist}, cumArr, cumDep,
+    meta:{durMin, speed, scale, delay,
+      gates: nodes.filter(n=>n.type==="gate").map(n=>n.id)}};
+  const sl=document.getElementById("timeSlider");
+  sl.max = T;
+  if(playT>T) playT=T;      // 短縮時のみクランプ (再生位置は保持)
+  sl.value=playT;
+  updateTimeLabel();
+  updateSummary();
+  drawCharts();
+  draw();
+}
+
+// ---------- 結果サマリー (ルールベース・決定論) ----------
+function updateSummary(){
+  const el = document.getElementById("summary");
+  if(!simResult){ el.textContent="計算実行を押すと結果が表示されます。"; return; }
+  const {T, queue, wait, throughput} = simResult;
+  let lines = [];
+  let worst = null;
+  for(const n of queueNodes()){
+    const q=queue[n.id], w=wait[n.id];
+    let maxQ=0, maxQt=0, maxW=0, satSec=0;
+    for(let t=0;t<=T;t++){
+      if(q[t]>maxQ){maxQ=q[t]; maxQt=t;}
+      if(w[t]>maxW) maxW=w[t];
+      if(q[t]>1) satSec++;
+    }
+    const isGate=n.type==="gate";
+    let desc, cap;
+    if(isGate){
+      desc=`${n.lanes}通路×${n.capPerLane}人/分`;
+      cap=(n.capPerLane||0)*(n.lanes||1);
+    } else {
+      const parts=[];
+      if((n.outRate||0)>0) parts.push(`定常${n.outRate}人/分`);
+      if((n.vehInterval||0)>0 && (n.vehCap||0)>0) parts.push(`一斉${n.vehCap}人×${n.vehInterval}分毎`);
+      desc=parts.join(" + ");
+      cap=(n.outRate||0) + ((n.vehInterval||0)>0 ? (n.vehCap||0)/n.vehInterval : 0);
+    }
+    lines.push(`■ ${n.label} (${desc})\n`+
+      `  最大行列: ${Math.round(maxQ)}人 (${fmtT(maxQt)}時点) / 最大待ち: ${maxW.toFixed(1)}分\n`+
+      `  行列発生時間: ${(satSec/60).toFixed(1)}分 / 処理能力: ${Math.round(cap)}人/分`);
+    if(!worst || maxW>worst.maxW) worst={n, maxQ, maxW, cap};
+  }
+  // 設備の定員 (更衣室ロッカー等) の占有状況
+  if(simResult.pools){
+    for(const g of Object.keys(simResult.pools.size)){
+      const sz=simResult.pools.size[g]; if(!(sz>0)) continue;
+      const h=simResult.pools.hist[g];
+      let m=0, mt=0, full=0;
+      for(let t=0;t<=T;t++){ if(h[t]>m){m=h[t]; mt=t;} if(h[t]>=sz-0.5) full++; }
+      lines.push(`■ 設備「${g}」の定員 (${sz}人)\n  最大占有: ${Math.round(m)}人 (${fmtT(mt)}時点)`+
+        (full>0?` / 満杯時間: ${(full/60).toFixed(1)}分 — 満杯中は入側の入室が待たされます`:""));
+    }
+  }
+  let tp=0; for(const id of Object.keys(throughput)) tp += throughput[id][T];
+  lines.push(`■ 総通過人数: ${Math.round(tp)}人`);
+  if(worst && worst.maxW>0.5){
+    let advice;
+    if(worst.n.type==="gate"){
+      const needLanes = Math.ceil(worst.n.lanes * (1 + worst.maxW/5));
+      advice=`通路数の増設 (例: ${worst.n.lanes}→${needLanes}通路)、分配比の変更、または流入平準化の検討を推奨します。`;
+    } else {
+      advice=`定常流出の増強、一斉出発の間隔短縮・人数増強、または他の流出先への分散の検討を推奨します。`;
+    }
+    lines.push(`\n【所見】最大のボトルネックは「${worst.n.label}」です。`+
+      `最大${worst.maxW.toFixed(1)}分待ち・${Math.round(worst.maxQ)}人の滞留が発生します。`+advice);
+  } else {
+    lines.push(`\n【所見】大きな滞留は発生していません。`);
+  }
+  el.textContent = lines.join("\n");
+}
+function fmtT(sec){ return Math.floor(sec/60)+":"+String(sec%60).padStart(2,"0"); }
+
+// AI用エクスポート (オプション: 計算には無関係)
+document.getElementById("btnCopyAI").onclick = ()=>{
+  if(!simResult){ alert("先に計算を実行してください。"); return; }
+  const {T,queue,wait,throughput} = simResult;
+  const data = {
+    tool:"walking-sim-prototype phase1",
+    note:"決定論的ネットワーク待ち行列モデルの結果。解釈と改善提案の言語化に使用。法的用途不可。",
+    duration_min: T/60,
+    nodes: nodes.map(n=>({id:n.id,type:n.type,label:n.label,
+      rate:n.rate, rateProfile:n.rateProfile, trainInterval:n.trainInterval, trainPax:n.trainPax, releaseMin:n.releaseMin,
+      capPerLane:n.capPerLane, lanes:n.lanes,
+      stayMin:n.stayMin, shareGroup:n.share, shareRole:n.shareRole, sharePool:n.poolSize, shareCap:n.shareCap})),
+    links: links.map(l=>({from:nodeById(l.from).label, to:nodeById(l.to).label, weight:l.weight})),
+    gates: queueNodes().map(n=>{
+      const q=queue[n.id], w=wait[n.id];
+      let maxQ=0,maxW=0,sat=0;
+      for(let t=0;t<=T;t++){ maxQ=Math.max(maxQ,q[t]); maxW=Math.max(maxW,w[t]); if(q[t]>1)sat++; }
+      return {label:n.label, maxQueue:Math.round(maxQ), maxWaitMin:+maxW.toFixed(1), congestedMin:+(sat/60).toFixed(1)};
+    }),
+    sharedPools: simResult.pools ? Object.keys(simResult.pools.size).filter(g=>simResult.pools.size[g]>0).map(g=>{
+      const h=simResult.pools.hist[g]; let m=0, full=0;
+      for(let t=0;t<=T;t++){ m=Math.max(m,h[t]); if(h[t]>=simResult.pools.size[g]-0.5) full++; }
+      return {group:g, size:simResult.pools.size[g], maxOccupied:Math.round(m), fullMin:+(full/60).toFixed(1)};
+    }) : [],
+    totalThroughput: Math.round(Object.values(throughput).reduce((s,a)=>s+a[T],0))
+  };
+  navigator.clipboard.writeText(JSON.stringify(data,null,2))
+    .then(()=>alert("AI解釈用JSONをクリップボードにコピーしました。\nClaude等に貼り付けて「この結果を解釈して改善案を提案して」と依頼できます。"))
+    .catch(()=>alert("コピーに失敗しました。"));
+};
+
+// ---------- 描画 ----------
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let view = {x:0, y:0, k:1}; // pan/zoom
+let bg = null; // {type:"dxf",segs:[[x1,y1,x2,y2],...],bounds} or {type:"img",img}
+let selected = null; // {kind:"node"|"link", id}
+let playT = 0, playing = false;
+let bgEdit = false; // 下絵の編集モード
+let dragBg = null;  // 下絵ドラッグ状態
+
+// 下絵の基準サイズの中心 (回転・拡大の基点)
+function bgCenter(){
+  if(!bg) return {x:0,y:0};
+  if(bg.type==="img") return {x:bg.img.width*bg.fit/2, y:bg.img.height*bg.fit/2};
+  return {x:(bg.w0||0)/2, y:(bg.h0||0)/2};
+}
+// ベクトルを下絵の回転角ぶん回転
+function bgRot(vx,vy){
+  const a=(bg.rot||0)*Math.PI/180, cs=Math.cos(a), sn=Math.sin(a);
+  return {x:vx*cs - vy*sn, y:vx*sn + vy*cs};
+}
+// 下絵の外接4隅のワールド座標 (lx,ly=ローカル座標も付与)
+function bgCorners(){
+  const c=bgCenter(), s=bg.scale||1, tx=bg.tx||0, ty=bg.ty||0;
+  return [[0,0],[c.x*2,0],[c.x*2,c.y*2],[0,c.y*2]].map(([lx,ly])=>{
+    const r=bgRot((lx-c.x)*s,(ly-c.y)*s);
+    return {x:r.x+c.x+tx, y:r.y+c.y+ty, lx, ly};
+  });
+}
+// ヘッダーに現在のシナリオ名を常時表示。currentScenarioName は保存時の既定名にも使う
+let currentScenarioName="新規シナリオ";
+function setScenarioName(name){
+  currentScenarioName = name || "新規シナリオ";
+  const el=document.getElementById("scnName");
+  el.textContent="シナリオ: "+currentScenarioName;
+  el.style.display="";
+}
+// 下絵を消去し編集モードも解除 (プリセット変更・シナリオ読込時)
+function clearBg(){
+  bg=null;
+  setBgEdit(false);
+  const f=document.getElementById("fileDxf"); if(f) f.value="";
+}
+// 下絵の変形値を数値入力欄へ反映
+function syncBgInputs(){
+  if(!bg) return;
+  document.getElementById("bgX").value=((bg.tx||0)/1000).toFixed(2);
+  document.getElementById("bgY").value=((bg.ty||0)/1000).toFixed(2);
+  document.getElementById("bgScale").value=Math.round((bg.scale||1)*1000)/10;
+  document.getElementById("bgRot").value=Math.round((bg.rot||0)*10)/10;
+}
+
+// ---------- 滞留ノードの形状編集ハンドル ----------
+// 選択中の滞留(gate)ノードの編集ハンドルをワールド座標で返す
+function nodeHandles(n){
+  if(!n || n.type!=="gate") return [];
+  const shape=n.shape||"circle", hs=[];
+  if(shape==="circle"){
+    const r=n.r||NODE_R;
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sy])=>hs.push({x:n.x+sx*r, y:n.y+sy*r, kind:"circle"}));
+  } else if(shape==="rect"){
+    const hw=(n.w||3000)/2, hh=(n.h||2200)/2;
+    [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sy])=>hs.push({x:n.x+sx*hw, y:n.y+sy*hh, kind:"rect", sx, sy}));
+  } else if(shape==="poly" && n.pts){
+    n.pts.forEach((p,i)=>hs.push({x:n.x+p.x, y:n.y+p.y, kind:"poly", idx:i}));
+  }
+  return hs;
+}
+function drawNodeHandles(n){
+  const hs=nodeHandles(n); if(!hs.length) return;
+  const uf=1/Math.min(view.k,1.5), sz=5*uf;
+  ctx.save();
+  ctx.fillStyle="#ffffff"; ctx.strokeStyle="#1e2126"; ctx.lineWidth=1.5/view.k;
+  for(const h of hs){ ctx.fillRect(h.x-sz, h.y-sz, sz*2, sz*2); ctx.strokeRect(h.x-sz, h.y-sz, sz*2, sz*2); }
+  ctx.restore();
+}
+function hitNodeHandle(n, wx, wy){
+  const hs=nodeHandles(n); if(!hs.length) return null;
+  const tol=9/view.k; let best=null, bd=tol;
+  for(const h of hs){ const d=Math.hypot(wx-h.x, wy-h.y); if(d<bd){ bd=d; best=h; } }
+  return best;
+}
+
+function fitView(){
+  if(!nodes.length){ view={x:0,y:0,k:1}; return; }
+  // ノードの外接範囲 (形状の大きさ込み) とリンク折れ点をすべて含める
+  let minX=1e18,minY=1e18,maxX=-1e18,maxY=-1e18;
+  for(const n of nodes){
+    const br=nodeBoundR(n);
+    minX=Math.min(minX,n.x-br); maxX=Math.max(maxX,n.x+br);
+    minY=Math.min(minY,n.y-br); maxY=Math.max(maxY,n.y+br);
+  }
+  for(const l of links){
+    for(const p of (l.pts||[])){
+      minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
+      minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
+    }
+  }
+  const pad=4000; // 余白 4m
+  minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+  const W=cv.clientWidth||800, H=cv.clientHeight||500;
+  const spanX=Math.max(1,maxX-minX), spanY=Math.max(1,maxY-minY);
+  const k=Math.min(W/spanX, H/spanY, 0.5); // 過剰ズーム防止に上限0.5
+  view.k=k; view.x=(W-(minX+maxX)*k)/2; view.y=(H-(minY+maxY)*k)/2;
+}
+function toWorld(px,py){ return {x:(px-view.x)/view.k, y:(py-view.y)/view.k}; }
+
+function nodeColor(t){ return {source:"#57c78a", junction:"#4da3ff", gate:"#ffd23f", sink:"#8b93a1"}[t]; }
+
+function drawSegLen(p1, p2){ // 区間長ラベル [m] (作図・編集時のラバーバンド用)
+  if(!p1||!p2) return;
+  const m = Math.hypot(p2.x-p1.x, p2.y-p1.y)*SCALE;
+  if(m<0.05) return;
+  const uf=1/Math.min(view.k,1.5);
+  const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+  const txt=m.toFixed(1)+" m";
+  ctx.font=`${11*uf}px sans-serif`;
+  const tw=ctx.measureText(txt).width;
+  ctx.fillStyle="rgba(20,22,26,.8)";
+  ctx.fillRect(mx-tw/2-3*uf, my-14*uf, tw+6*uf, 14*uf);
+  ctx.fillStyle="#ffe9a8"; ctx.textAlign="center";
+  ctx.fillText(txt, mx, my-3*uf);
+}
+
+function draw(){
+  const W=cv.clientWidth, H=cv.clientHeight;
+  if(cv.width!==W*devicePixelRatio){ cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio; }
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  ctx.translate(view.x,view.y); ctx.scale(view.k,view.k);
+
+  // 下絵
+  if(bg && document.getElementById("pShowBg").checked){
+    ctx.save(); ctx.globalAlpha=0.45;
+    // 下絵の変形 (移動・拡大縮小・回転): 中心を基準に適用
+    const c=bgCenter(), sc=bg.scale||1;
+    ctx.translate(bg.tx||0, bg.ty||0);
+    ctx.translate(c.x, c.y); ctx.rotate((bg.rot||0)*Math.PI/180); ctx.scale(sc, sc); ctx.translate(-c.x, -c.y);
+    if(bg.type==="img"){ ctx.drawImage(bg.img, 0, 0, bg.img.width*bg.fit, bg.img.height*bg.fit); }
+    else {
+      ctx.strokeStyle="#6b7484"; ctx.lineWidth=1/(view.k*sc);
+      ctx.beginPath();
+      for(const s of bg.segs){ ctx.moveTo(s[0],s[1]); ctx.lineTo(s[2],s[3]); }
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 編集中は下絵の外接枠と四隅のリサイズハンドルを表示 (画面上で一定サイズ)
+    if(bgEdit){
+      const cor=bgCorners();
+      ctx.save();
+      ctx.strokeStyle="#ffd23f"; ctx.lineWidth=1.5/view.k; ctx.setLineDash([6/view.k,4/view.k]);
+      ctx.beginPath(); ctx.moveTo(cor[0].x,cor[0].y);
+      for(let i=1;i<4;i++) ctx.lineTo(cor[i].x,cor[i].y);
+      ctx.closePath(); ctx.stroke();
+      ctx.setLineDash([]);
+      const hs=7/view.k;
+      ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1e2126"; ctx.lineWidth=1.5/view.k;
+      for(const p of cor){ ctx.fillRect(p.x-hs,p.y-hs,hs*2,hs*2); ctx.strokeRect(p.x-hs,p.y-hs,hs*2,hs*2); }
+      ctx.restore();
+    }
+  }
+
+  // ヒートマップ (密度 [人/m²])
+  if(simResult && document.getElementById("pHeat").checked) drawHeatLayer();
+
+  // 最大流量 (リンク色スケール用)
+  let maxFlow = 0.01;
+  if(simResult){ for(const l of links){ const f=simResult.linkFlow[l.id][Math.min(playT,simResult.T)]||0; maxFlow=Math.max(maxFlow,f); } }
+
+  // リンク (折れ線)
+  for(const l of links){
+    const path=linkPath(l);
+    if(!path) continue;
+    let col="#555c68", w=2;
+    if(simResult){
+      const f=(simResult.linkFlow[l.id][Math.min(playT,simResult.T)]||0)/maxFlow;
+      col = flowColor(f); w = 2+f*6;
+    }
+    const isSel = selected && selected.kind==="link" && selected.id===l.id;
+    if(isSel){ // 選択中: 元の色のまま淡いハローを添える
+      ctx.strokeStyle="rgba(255,255,255,.25)";
+      ctx.lineWidth=(w+5)/Math.min(view.k,1.5);
+      ctx.beginPath();
+      ctx.moveTo(path[0].x,path[0].y);
+      for(let i=1;i<path.length;i++) ctx.lineTo(path[i].x,path[i].y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle=col; ctx.lineWidth=w/Math.min(view.k,1.5);
+    ctx.beginPath();
+    ctx.moveTo(path[0].x,path[0].y);
+    for(let i=1;i<path.length;i++) ctx.lineTo(path[i].x,path[i].y);
+    ctx.stroke();
+    // 矢印 (経路中央)
+    const mid=pointAtFrac(path,0.5), s=9/Math.min(view.k,1.5);
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(mid.x+Math.cos(mid.ang)*s, mid.y+Math.sin(mid.ang)*s);
+    ctx.lineTo(mid.x+Math.cos(mid.ang+2.6)*s, mid.y+Math.sin(mid.ang+2.6)*s);
+    ctx.lineTo(mid.x+Math.cos(mid.ang-2.6)*s, mid.y+Math.sin(mid.ang-2.6)*s);
+    ctx.closePath(); ctx.fill();
+    // リンク情報ラベル (長さ・幅・収容定員 / 下段に重み=分配比)
+    {
+      const uf=1/Math.min(view.k,1.5);
+      const lenM=pathLen(path)*SCALE;
+      const wM=l.width||3;
+      let txt=`${lenM.toFixed(1)}m×${wM}m`;
+      if(document.getElementById("pSpill").checked)
+        txt+=` 収容${Math.round(lenM*wM*QUEUE_DENSITY)}人`;
+      ctx.fillStyle="#9aa4b2"; ctx.font=`${10.5*uf}px sans-serif`; ctx.textAlign="center";
+      ctx.fillText(txt, mid.x, mid.y+16*uf);
+      // 重み(分配比): 同一始点から複数リンクへ分岐する場合は割合(%)も併記
+      const sibs=links.filter(x=>x.from===l.from);
+      let wtxt=`重み ${l.weight}`;
+      if(sibs.length>1){
+        const wsum=sibs.reduce((s,x)=>s+(x.weight||1),0);
+        wtxt+=` (${Math.round((l.weight||1)/wsum*100)}%)`;
+      }
+      ctx.fillStyle="#c7b06b";
+      ctx.fillText(wtxt, mid.x, mid.y+28*uf);
+    }
+    // 選択中: 中間点ハンドル
+    if(isSel && l.pts){
+      for(const p of l.pts){
+        ctx.fillStyle="#c9d4e2"; ctx.strokeStyle="#000";
+        ctx.lineWidth=1/view.k;
+        const hs=5/Math.min(view.k,1.5);
+        ctx.fillRect(p.x-hs,p.y-hs,hs*2,hs*2);
+        ctx.strokeRect(p.x-hs,p.y-hs,hs*2,hs*2);
+      }
+    }
+  }
+
+  // リンク作成中のプレビュー
+  if(mode==="link" && linkFirst){
+    ctx.strokeStyle="rgba(255,255,255,.6)"; ctx.setLineDash([6,4]);
+    ctx.lineWidth=1.5/view.k;
+    ctx.beginPath();
+    ctx.moveTo(linkFirst.x, linkFirst.y);
+    for(const p of pendingPts) ctx.lineTo(p.x,p.y);
+    if(lastMouse) ctx.lineTo(lastMouse.x,lastMouse.y);
+    ctx.stroke(); ctx.setLineDash([]);
+    if(lastMouse) drawSegLen(pendingPts.length?pendingPts[pendingPts.length-1]:linkFirst, lastMouse);
+  }
+  // 多角形描画中のプレビュー
+  if(mode==="polytrace" && tracePts.length){
+    const uf=1/Math.min(view.k,1.5);
+    // 確定済みの辺は実線
+    if(tracePts.length>1){
+      ctx.strokeStyle="#ffd76b"; ctx.lineWidth=2/view.k; ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(tracePts[0].x, tracePts[0].y);
+      for(let i=1;i<tracePts.length;i++) ctx.lineTo(tracePts[i].x, tracePts[i].y);
+      ctx.stroke();
+    }
+    // ラバーバンド (最終頂点→マウス) は点線
+    if(lastMouse){
+      ctx.strokeStyle="#ffd76b"; ctx.lineWidth=1.5/view.k; ctx.setLineDash([6/view.k,4/view.k]);
+      ctx.beginPath();
+      ctx.moveTo(tracePts[tracePts.length-1].x, tracePts[tracePts.length-1].y);
+      ctx.lineTo(lastMouse.x, lastMouse.y);
+      ctx.stroke(); ctx.setLineDash([]);
+      drawSegLen(tracePts[tracePts.length-1], lastMouse);
+    }
+    // 各頂点に点を表示
+    ctx.fillStyle="#ffd76b";
+    for(const p of tracePts){ ctx.beginPath(); ctx.arc(p.x, p.y, 4*uf, 0, Math.PI*2); ctx.fill(); }
+    // スナップ中は白いリングで強調
+    if(snapPreview){
+      ctx.strokeStyle="#ffffff"; ctx.lineWidth=2/view.k;
+      ctx.beginPath(); ctx.arc(snapPreview.x, snapPreview.y, 7*uf, 0, Math.PI*2); ctx.stroke();
+    }
+  }
+  // ドラッグ中の区間長表示
+  if(dragVertex){
+    const path=linkPath(dragVertex.link);
+    if(path){
+      const i=dragVertex.idx+1; // pathではノードが先頭にいる分ずれる
+      drawSegLen(path[i-1], path[i]);
+      if(path[i+1]) drawSegLen(path[i], path[i+1]);
+    }
+  }
+
+  // ノード
+  function buildNodePath(n){
+    ctx.beginPath();
+    if(n.shape==="rect"){
+      ctx.rect(n.x-(n.w||3000)/2, n.y-(n.h||2200)/2, n.w||3000, n.h||2200);
+    } else if(n.shape==="poly" && n.pts && n.pts.length>2){
+      ctx.moveTo(n.x+n.pts[0].x, n.y+n.pts[0].y);
+      for(let i=1;i<n.pts.length;i++) ctx.lineTo(n.x+n.pts[i].x, n.y+n.pts[i].y);
+      ctx.closePath();
+    } else {
+      ctx.arc(n.x,n.y,n.r||NODE_R,0,Math.PI*2);
+    }
+  }
+  drawParticles(); // 歩行者ドット (リンク上の歩行中の人)
+
+  for(const n of nodes){
+    const br=nodeBoundR(n);
+    const uf=1/Math.min(view.k,1.5); // 画面基準サイズ→図面単位換算
+    const isArea = n.type==="gate" || n.shape==="poly"; // 滞留エリア/広場は輪郭主体
+    buildNodePath(n);
+    if(isArea){
+      ctx.save(); ctx.globalAlpha=0.12; ctx.fillStyle=nodeColor(n.type); ctx.fill(); ctx.restore();
+    } else {
+      ctx.fillStyle=nodeColor(n.type); ctx.fill();
+    }
+    // 滞留状況グラデーション (改札等: 行列人数÷面積 → 密度色、必要面積分だけ出口側から充填)
+    if(simResult && simResult.queue[n.id]){
+      // エリア内の人数のみで塗る (上流リンクの詰まりはリンク側で表現)
+      const qsrc = simResult.queueIn || simResult.queue;
+      const Q = qsrc[n.id][Math.min(playT,simResult.T)]||0;
+      if(Q>0.5){
+        const sc = simResult.meta.scale;
+        const area = Math.max(0.5, nodeAreaM2(n, sc));
+        const dmax = Math.max(0.1, +document.getElementById("pHeatMax").value||3);
+        const dens = Q/area;                                  // 平均密度 [人/m²]
+        const frac = Math.min(1, (Q/QUEUE_DENSITY)/area);     // 必要面積の充填率
+        // 出口(下流リンク方向)寄りの点からグラデーションを広げる
+        let ex=n.x, ey=n.y;
+        const out=links.find(l=>l.from===n.id);
+        if(out){
+          const p=linkPath(out);
+          if(p && p.length>1){
+            const dx=p[1].x-n.x, dy=p[1].y-n.y, dd=Math.hypot(dx,dy)||1;
+            ex=n.x+dx/dd*br*0.6; ey=n.y+dy/dd*br*0.6;
+          }
+        }
+        const rad=Math.max(6, br*2.2*Math.sqrt(frac));
+        const c=heatColor(Math.min(1, dens/dmax));
+        const g=ctx.createRadialGradient(ex,ey,0,ex,ey,rad);
+        g.addColorStop(0, c+"0.85)");
+        g.addColorStop(0.65, c+"0.55)");
+        g.addColorStop(1, c+"0)");
+        ctx.save(); buildNodePath(n); ctx.clip();
+        ctx.fillStyle=g;
+        ctx.fillRect(n.x-br*1.3, n.y-br*1.3, br*2.6, br*2.6);
+        ctx.restore();
+      }
+    }
+    // 輪郭 (選択中は白の太線+グローで強調)
+    const isSelNode = selected&&selected.kind==="node"&&selected.id===n.id;
+    if(isSelNode){ // 選択中: 接続線と同様、淡いハローのみ (輪郭色は変えない)
+      buildNodePath(n);
+      ctx.strokeStyle="rgba(255,255,255,.25)";
+      ctx.lineWidth=7/Math.min(view.k,1.5);
+      ctx.stroke();
+    }
+    buildNodePath(n);
+    ctx.strokeStyle=isArea?nodeColor(n.type):"rgba(0,0,0,.4)";
+    ctx.lineWidth=2/Math.min(view.k,1.5);
+    ctx.stroke();
+    // 一斉到着(流入)・一斉出発(流出)の発生中: 広がるリングで明示
+    {
+      const iv=(n.type==="source"?(n.trainInterval||0):(n.type==="sink"?(n.vehInterval||0):0))*60;
+      const amt=n.type==="source"?(n.trainPax||0):(n.type==="sink"?(n.vehCap||0):0);
+      if(simResult && iv>0 && amt>0){
+        const rel=Math.min(Math.max(1,Math.round((n.releaseMin||0.5)*60)),iv);
+        const ph=Math.min(playT,simResult.T)%iv;
+        if(ph<rel){
+          const f2=ph/rel; // 0→1 で広がりながら薄くなる
+          ctx.strokeStyle=`rgba(255,255,255,${(0.85*(1-f2)).toFixed(2)})`;
+          ctx.lineWidth=3/Math.min(view.k,1.5);
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, br+(6+20*f2)*uf, 0, Math.PI*2);
+          ctx.stroke();
+        }
+      }
+    }
+    // ラベル
+    ctx.fillStyle="#d8dee6"; ctx.font=`${12/Math.min(view.k,1.5)}px sans-serif`;
+    ctx.textAlign="center";
+    ctx.fillText(n.label, n.x, n.y+br+14*uf);
+    // ノード種別ごとの情報ラベル (2行目)
+    {
+      let info=null;
+      if(n.type==="gate"){
+        const parts=[];
+        // 面積・収容は満杯判定に使うスピルバック時のみ表示 (オフ時は計算に影響しないため非表示)
+        if(document.getElementById("pSpill").checked){
+          const areaM2=nodeAreaM2(n,SCALE);
+          parts.push(`${areaM2.toFixed(0)}m² / 収容${Math.round(areaM2*QUEUE_DENSITY)}人`);
+        }
+        // 設備定員の占有状況 (設備内で共通のため入側にのみ表示)。定員なしの設備は設備名を表示
+        if(n.share && n.shareRole!=="out"){
+          const pools=simResult&&simResult.pools;
+          if(pools && pools.size[n.share]>0 && pools.hist[n.share]){
+            parts.push(`占有${Math.round(pools.hist[n.share][Math.min(playT,simResult.T)]||0)}/${pools.size[n.share]}人`);
+          } else if((n.poolSize||0)>0){
+            parts.push(`設備定員${n.poolSize}人`);
+          } else {
+            parts.push(`設備「${n.share}」`);
+          }
+        }
+        info=parts.length?parts.join(" / "):null;
+      } else if(n.type==="junction" && (n.stayMin||0)>0){
+        info=`滞在${n.stayMin}分`;
+        if(simResult && simResult.dwellOcc && simResult.dwellOcc[n.id])
+          info+=` / 在圏${Math.round(simResult.dwellOcc[n.id][Math.min(playT,simResult.T)]||0)}人`;
+      } else if(n.type==="source"){
+        const parts=[];
+        if(n.rate>0) parts.push(`${n.rate}人/分`);
+        if((n.trainInterval||0)>0 && (n.trainPax||0)>0) parts.push(`+${n.trainPax}人/${n.trainInterval}分毎`);
+        info=parts.length?parts.join(" "):"流入なし";
+      } else if(n.type==="sink"){
+        const parts=[];
+        if((n.outRate||0)>0) parts.push(`${n.outRate}人/分`);
+        if((n.vehInterval||0)>0 && (n.vehCap||0)>0) parts.push(`+${n.vehCap}人/${n.vehInterval}分毎`);
+        if(simResult){
+          const tp=simResult.throughput[n.id][Math.min(playT,simResult.T)]||0;
+          parts.push(`通過 ${Math.round(tp)}人`);
+        }
+        info=parts.length?parts.join(" "):null;
+      }
+      if(info){
+        ctx.fillStyle="#9aa4b2"; ctx.font=`${10.5/Math.min(view.k,1.5)}px sans-serif`;
+        ctx.fillText(info, n.x, n.y+br+27*uf);
+        ctx.font=`${12/Math.min(view.k,1.5)}px sans-serif`;
+      }
+    }
+    // 行列バー
+    if(simResult && simResult.queue[n.id]){
+      const q=simResult.queue[n.id][Math.min(playT,simResult.T)]||0;
+      if(q>0.5){
+        // 平方根スケール: 25人=20px, 100人=40px, 400人=80px, 900人=120px(上限)
+        const h=Math.min(120, 4*Math.sqrt(q))*uf;
+        ctx.fillStyle="rgba(255,80,70,.85)";
+        ctx.fillRect(n.x-br-10*uf, n.y+br*0.6-h, 7*uf, h);
+        ctx.fillStyle="#ff8f85"; ctx.textAlign="left";
+        ctx.fillText(Math.round(q)+"人", n.x-br-2*uf, n.y-br-4*uf);
+      }
+      const w = simResult.wait[n.id][Math.min(playT,simResult.T)]||0;
+      if(w>0.05){
+        // シミュレーション時間内に捌けない場合は「≥残り時間」表示
+        const nearEnd = w >= (simResult.T-Math.min(playT,simResult.T))/60 - 0.02;
+        ctx.fillStyle="#ffd76b"; ctx.textAlign="left";
+        ctx.fillText((nearEnd?"待≥":"待")+w.toFixed(1)+"分", n.x+br+4*uf, n.y+4*uf);
+      }
+    }
+  }
+  // 選択中の滞留ノードには形状編集ハンドルを表示 (選択モード時)
+  if(mode==="select" && selected && selected.kind==="node"){
+    const sn=nodeById(selected.id);
+    if(sn && sn.type==="gate") drawNodeHandles(sn);
+  }
+  ctx.restore();
+}
+function flowColor(f){ // 0..1 青→黄→赤
+  const h = (1-f)*220;
+  return `hsl(${h},80%,55%)`;
+}
+
+// ---------- ヒートマップ描画 ----------
+const QUEUE_DENSITY = 2.5; // 待ち行列の滞留密度 [人/m²]
+function heatColor(t){ // t: 0..1 → 青→緑→黄→赤
+  const h = 225*(1-t);
+  return `hsla(${h},85%,55%,`;
+}
+function drawHeatLayer(){
+  const {T, hist, queue, sampleMax, maxQueue, meta} = simResult;
+  const {delay, speed, scale} = meta;
+  const mode = document.getElementById("pHeatMode").value;
+  const dmax = Math.max(0.1, +document.getElementById("pHeatMax").value || 3);
+  const baseAlpha = +document.getElementById("pHeatAlpha").value || 0.7;
+  const t = Math.min(playT, T);
+
+  // グリッド範囲 (ノード群のバウンディングボックス)
+  let minX=1e18,minY=1e18,maxX=-1e18,maxY=-1e18;
+  for(const n of nodes){
+    minX=Math.min(minX,n.x); maxX=Math.max(maxX,n.x);
+    minY=Math.min(minY,n.y); maxY=Math.max(maxY,n.y);
+  }
+  if(minX>maxX) return;
+  const pad = 4/scale; // 4m分の余白
+  minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+  const cs = Math.max(3, 0.8/scale); // セル約0.8m角 (ワールドpx)
+  const nx = Math.min(600, Math.ceil((maxX-minX)/cs));
+  const ny = Math.min(600, Math.ceil((maxY-minY)/cs));
+  const grid = new Float32Array(nx*ny);
+
+  function splat(x, y, d, halfWidthM){
+    // 通路幅の半分の広がりで密度dを塗る (重なりはmax)
+    const r = Math.max(cs*0.7, halfWidthM/scale);
+    const ci = (x-minX)/cs, cj = (y-minY)/cs;
+    const rc = Math.ceil(r/cs);
+    const i0=Math.max(0,Math.floor(ci-rc)), i1=Math.min(nx-1,Math.ceil(ci+rc));
+    const j0=Math.max(0,Math.floor(cj-rc)), j1=Math.min(ny-1,Math.ceil(cj+rc));
+    for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){
+      const dx=(i+0.5-ci)*cs, dy=(j+0.5-cj)*cs;
+      const dd=Math.hypot(dx,dy);
+      if(dd>r) continue;
+      const v = d*(1 - 0.5*(dd/r)*(dd/r)); // 中心1.0→縁0.5の緩い減衰
+      const idx=j*nx+i;
+      if(v>grid[idx]) grid[idx]=v;
+    }
+  }
+
+  // 1) リンク上の歩行者密度: サンプル点k (リンク進入からk秒後の位置、折れ線対応)
+  for(const l of links){
+    const path=linkPath(l);
+    if(!path) continue;
+    const D=delay[l.id];
+    const w=l.width||3;
+    const areaPerSample = w*speed*1; // [m²] = 幅 × 1秒分の歩行距離
+    const sm = sampleMax[l.id];
+    for(let k=0;k<D;k++){
+      let c;
+      if(mode==="max"){ c=sm[k]; }
+      else { const tt=t-k; c = tt>=0 ? hist[l.id][tt] : 0; }
+      if(c<=1e-4) continue;
+      const p=pointAtFrac(path,(k+0.5)/D);
+      splat(p.x, p.y, c/areaPerSample, w/2);
+    }
+  }
+
+  // 2) ボトルネックの行列: 上流リンクに沿って滞留密度2.5人/m²の帯
+  for(const n of nodes){
+    if(!queue[n.id]) continue; // 行列を持つノード(滞留・車両待ち流出)のみ
+    const Q = mode==="max" ? (maxQueue[n.id]||0) : queue[n.id][t];
+    if(Q<0.5) continue;
+    const ins = links.filter(l=>l.to===n.id);
+    if(!ins.length){ splat(n.x, n.y, Math.min(QUEUE_DENSITY, Q/4), 1.5); continue; }
+    const share = Q/ins.length;
+    for(const l of ins){
+      const path=linkPath(l);
+      if(!path) continue;
+      const w=l.width||3;
+      const linkLenM = pathLen(path)*scale;
+      const qLenM = Math.min(linkLenM, share/(QUEUE_DENSITY*w)); // 行列の長さ[m]
+      const steps = Math.max(1, Math.round(qLenM/0.8));
+      for(let s=0;s<steps;s++){
+        const f = 1 - (qLenM/linkLenM)*((s+0.5)/steps); // ゲート端から上流へ (折れ線に沿う)
+        const p=pointAtFrac(path,f);
+        splat(p.x, p.y, QUEUE_DENSITY, w/2);
+      }
+    }
+  }
+
+  // 3) 描画 (現在の world 変換のまま矩形を塗る)
+  const thresh = dmax*0.03;
+  for(let j=0;j<ny;j++){
+    for(let i=0;i<nx;i++){
+      const v=grid[j*nx+i];
+      if(v<=thresh) continue;
+      const r=Math.min(1, v/dmax);
+      ctx.fillStyle = heatColor(r) + (baseAlpha*(0.3+0.7*r)).toFixed(3) + ")";
+      ctx.fillRect(minX+i*cs, minY+j*cs, cs+0.5, cs+0.5);
+    }
+  }
+}
+
+// ---------- グラフ ----------
+const gateColors=["#ffd23f","#4da3ff","#57c78a","#e06bd0","#ff6b5e","#9aa4b2"];
+function queueNodes(){ // 行列を持つノード (滞留 + 車両待ちの流出)
+  return simResult ? nodes.filter(n=>simResult.queue[n.id]) : [];
+}
+// ---------- 歩行者ドット (表示専用・決定論) ----------
+// リンクの遅延線(hist)から歩行中の人を点として描画する。計算には一切影響しない。
+// 配置の揺らぎは乱数ではなく (リンク番号, 進入時刻, 連番) の決定論的ハッシュで生成する。
+function dotHash(a,b,c){
+  let h=(Math.imul(a,2654435761) ^ Math.imul(b,40503) ^ Math.imul(c,97))>>>0;
+  h^=h>>>13; h=Math.imul(h,2246822519)>>>0; h^=h>>>16;
+  return (h%1024)/1024;
+}
+// 密度[人/m²]に応じたドット色 (ヒートマップと同系: 白→黄→橙→赤)
+function dotColor(dens){
+  const r=Math.min(1, dens/QUEUE_DENSITY); // 2.5人/m²で最も混雑した赤
+  const c=heatColor(r); // "rgba(R,G,B,"
+  // 歩行の低密度側は白寄りに、混雑側は heatColor に寄せる
+  if(r<0.15) return "rgba(232,241,255,.9)";
+  return c+"0.92)";
+}
+function drawParticles(){
+  const chk=document.getElementById("pDots");
+  if(!simResult || !chk || !chk.checked) return;
+  const t=Math.min(playT,simResult.T);
+  const scale=simResult.meta.scale;
+  const rad=2.1/Math.min(view.k,1.5);
+  // 1ドット=1人を基本 (点は画面上ほぼ一定サイズ。混雑帯では重なって塊=密、歩行はまばらに見える)。
+  // 極端な大群衆のみ描画上限を超えないよう集約する。
+  const totalPeople = (function(){
+    let s=0; const tt=Math.min(playT,simResult.T);
+    for(const l of links){ const D=simResult.meta.delay[l.id]; if(!D)continue; const h=simResult.hist[l.id];
+      for(let k=0;k<D;k++){ const x=tt-k; if(x<0)break; s+=h[x]; } }
+    for(const n of nodes) if(simResult.queue[n.id]) s+=simResult.queue[n.id][tt];
+    return s;
+  })();
+  const perDot = Math.max(1, Math.ceil(totalPeople/3000)); // 上限3000ドット相当
+
+  // --- (1) 歩行中の人: リンクの遅延線に沿って、局所密度に応じた色・数で配置 ---
+  for(let li=0; li<links.length; li++){
+    const l=links[li];
+    const D=simResult.meta.delay[l.id];
+    const h=simResult.hist[l.id];
+    const path=linkPath(l);
+    if(!path || !D || D<1) continue;
+    const wmm=(l.width||3)*1000, wM=l.width||3;
+    const lenM=pathLen(path)*scale;
+    const segLenM=lenM/D; // 1秒ステップが占める区間長[m]
+    let drawn=0;
+    for(let k=0; k<D && drawn<1200; k++){
+      const tt=t-k; if(tt<0) break;
+      const nppl=h[tt]; if(nppl<=1e-4) continue;
+      // この区間の局所密度[人/m²] = 人数 ÷ (区間長 × 幅)
+      const dens=nppl/Math.max(0.1, segLenM*wM);
+      const col=dotColor(dens);
+      // 描くドット数 = 人数 ÷ perDot (端数は決定論ハッシュで確率的に切上げ)
+      const exact=nppl/perDot;
+      let m=Math.floor(exact);
+      if(dotHash(li+13, tt+5, 99) < (exact-m)) m++;
+      if(!m) continue;
+      const sz=rad*(perDot>1?1.25:1);
+      ctx.fillStyle=col;
+      for(let i=0;i<m && drawn<1200;i++){
+        const fr=Math.min(0.999, Math.max(0, (k+0.15+0.7*dotHash(li+7,tt+3,i+1))/D));
+        const p=pointAtFrac(path, fr);
+        const off=(dotHash(li+1,tt+1,i+11)-0.5)*wmm*0.85;
+        const ax=Math.cos(p.ang+Math.PI/2), ay=Math.sin(p.ang+Math.PI/2);
+        ctx.beginPath();
+        ctx.arc(p.x+ax*off, p.y+ay*off, sz, 0, Math.PI*2);
+        ctx.fill();
+        drawn++;
+      }
+    }
+  }
+
+  // --- (2) 行列: 滞留帯 (2.5人/m²) の中に、行列人数ぶんの点を密に並べる ---
+  // 「歩行=まばらに流れる点」との対比で、混雑の疎密が一目で分かる
+  const {queue, maxQueue}=simResult;
+  const heatMode=document.getElementById("pHeatMode").value;
+  ctx.fillStyle=dotColor(QUEUE_DENSITY); // 最も混雑した色
+  for(const n of nodes){
+    if(!queue[n.id]) continue;
+    const Q = heatMode==="max" ? (maxQueue[n.id]||0) : queue[n.id][t];
+    if(Q<0.5) continue;
+    const ins=links.filter(l=>l.to===n.id);
+    if(!ins.length) continue;
+    const share=Q/ins.length;
+    for(const l of ins){
+      const li=links.indexOf(l);
+      const path=linkPath(l);
+      if(!path) continue;
+      const wM=l.width||3, wmm=wM*1000;
+      const linkLenM=pathLen(path)*scale;
+      const qLenM=Math.min(linkLenM, share/(QUEUE_DENSITY*wM)); // 行列の長さ[m]
+      const nDots=Math.min(1000, Math.round(share/perDot));     // 帯に並べる点の数
+      const sz=rad*(perDot>1?1.25:1);
+      for(let s=0;s<nDots;s++){
+        // 帯の中に格子状+微揺らぎで配置 (ゲート端から上流へ)
+        const along=(s+0.5)/nDots;
+        const f=1 - (qLenM/linkLenM)*along;
+        const p=pointAtFrac(path, f);
+        const off=(dotHash(li+3, s+1, 7)-0.5)*wmm*0.85;
+        const ax=Math.cos(p.ang+Math.PI/2), ay=Math.sin(p.ang+Math.PI/2);
+        ctx.beginPath();
+        ctx.arc(p.x+ax*off, p.y+ay*off, sz, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+}
+
+function drawCharts(){
+  drawChart("chQueue","queue","人");
+  drawChart("chWait","wait","分");
+  drawCumChart();
+  drawOccChart();
+  drawMarkers();
+}
+// ---------- タイムラインのイベントマーカー ----------
+// 緑=一斉到着 / 青=一斉出発(車両) / 赤帯=設備の定員満杯。クリックでその時刻へジャンプ
+function drawMarkers(){
+  const c=document.getElementById("markerBar"), g=c.getContext("2d");
+  const W=c.clientWidth, H=c.clientHeight;
+  c.width=W*devicePixelRatio; c.height=H*devicePixelRatio;
+  g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  g.clearRect(0,0,W,H);
+  if(!simResult) return;
+  const T=simResult.T;
+  // 設備の定員満杯の期間: 赤帯
+  if(simResult.pools) for(const gname of Object.keys(simResult.pools.size)){
+    const sz=simResult.pools.size[gname]; if(!(sz>0)) continue;
+    const h=simResult.pools.hist[gname];
+    g.fillStyle="rgba(255,80,70,.55)";
+    let s=-1;
+    for(let t=0;t<=T;t++){
+      const full=h[t]>=sz-0.5;
+      if(full && s<0) s=t;
+      if((!full || t===T) && s>=0){ g.fillRect(W*s/T, 2, Math.max(1,W*(t-s)/T), H-4); s=-1; }
+    }
+  }
+  // 一斉到着 (緑) / 一斉出発 (青) の発生時刻ティック
+  for(const n of nodes){
+    const iv=(n.type==="source"?(n.trainInterval||0):(n.type==="sink"?(n.vehInterval||0):0))*60;
+    const amt=n.type==="source"?(n.trainPax||0):(n.type==="sink"?(n.vehCap||0):0);
+    if(!(iv>0 && amt>0)) continue;
+    g.fillStyle=n.type==="source"?"rgba(63,185,80,.9)":"rgba(88,166,255,.9)";
+    for(let t=0;t<=T;t+=iv) g.fillRect(W*t/T, 0, 1.5, H);
+  }
+}
+document.getElementById("markerBar").onclick=e=>{
+  if(!simResult) return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  playT=Math.max(0, Math.min(simResult.T, Math.round(simResult.T*(e.clientX-rect.left)/rect.width)));
+  document.getElementById("timeSlider").value=playT;
+  updateTimeLabel(); draw(); drawCharts();
+};
+// グラフ共通: キャンバス初期化と軸描画。px/py変換関数を返す
+function chartSetup(id, maxV, T){
+  const c=document.getElementById(id), g=c.getContext("2d");
+  const W=c.clientWidth, H=c.clientHeight;
+  c.width=W*devicePixelRatio; c.height=H*devicePixelRatio;
+  g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  g.clearRect(0,0,W,H);
+  const padL=42,padR=10,padT=22,padB=18;
+  const px=t=>padL+(W-padL-padR)*t/T, py=v=>H-padB-(H-padT-padB)*v/maxV;
+  g.strokeStyle="#3d434e"; g.fillStyle="#9aa4b2"; g.font="10px sans-serif"; g.textAlign="right";
+  for(let i=0;i<=4;i++){
+    const v=maxV*i/4, y=py(v);
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(W-padR,y); g.stroke();
+    g.fillText(v>=10?Math.round(v):v.toFixed(1), padL-4, y+3);
+  }
+  g.textAlign="center";
+  for(let m=0;m<=T/60;m+=Math.max(1,Math.round(T/60/6))) g.fillText(m+"分", px(m*60), H-4);
+  return {g,W,H,px,py,padT,padB,padL};
+}
+// 累積流入・流出図: 選択中のボトルネック (未選択時は最大行列のボトルネック)
+// 2曲線の横の開き=待ち時間、縦の開き=行列人数、間の面積=延べ待ち時間
+function drawCumChart(){
+  const title=document.getElementById("chCumTitle");
+  if(!simResult || !simResult.cumArr){ chartSetup("chCum",1,1); title.textContent="累積流入・流出 [人]"; return; }
+  const {T}=simResult;
+  let node=null;
+  if(selected&&selected.kind==="node"){ const n=nodeById(selected.id); if(n&&simResult.cumArr[n.id]) node=n; }
+  if(!node){ let best=-1; for(const n of queueNodes()){ const m=simResult.maxQueue[n.id]||0; if(m>best){best=m; node=n;} } }
+  if(!node){ chartSetup("chCum",1,Math.max(1,T)); title.textContent="累積流入・流出 [人] (対象なし)"; return; }
+  title.textContent=`累積流入・流出 [人]: ${node.label}`;
+  const ca=simResult.cumArr[node.id], cd=simResult.cumDep[node.id];
+  const maxV=Math.max(1,ca[T]);
+  const {g,H,px,py,padT,padB}=chartSetup("chCum",maxV,T);
+  // 2曲線の間 (=待ちの領域) を塗る
+  g.beginPath();
+  for(let t=0;t<=T;t+=2){ const x=px(t),y=py(ca[t]); t===0?g.moveTo(x,y):g.lineTo(x,y); }
+  for(let t=T;t>=0;t-=2){ g.lineTo(px(t),py(cd[t])); }
+  g.closePath(); g.fillStyle="rgba(255,120,80,.18)"; g.fill();
+  const line=(arr,col)=>{
+    g.strokeStyle=col; g.lineWidth=1.6; g.beginPath();
+    for(let t=0;t<=T;t+=2){ const x=px(t),y=py(arr[t]); t===0?g.moveTo(x,y):g.lineTo(x,y); }
+    g.stroke();
+  };
+  line(ca,"#ffd76b"); line(cd,"#3fb950");
+  g.font="10px sans-serif"; g.textAlign="left";
+  g.fillStyle="#ffd76b"; g.fillText("到着", 48, 14);
+  g.fillStyle="#3fb950"; g.fillText("退出", 82, 14);
+  g.fillStyle="#9aa4b2"; g.fillText("横差=待ち時間 / 縦差=行列", 116, 14);
+  g.strokeStyle="rgba(255,255,255,.5)";
+  g.beginPath(); g.moveTo(px(Math.min(playT,T)),padT); g.lineTo(px(Math.min(playT,T)),H-padB); g.stroke();
+}
+// 設備の占有・在圏図: 設備定員(ロッカー・座席等)の占有と滞留ノード(浴場等)の在圏人数
+function drawOccChart(){
+  const title=document.getElementById("chOccTitle");
+  if(!simResult){ chartSetup("chOcc",1,1); return; }
+  const {T}=simResult;
+  const series=[];
+  if(simResult.pools) for(const gname of Object.keys(simResult.pools.size)){
+    if(simResult.pools.size[gname]>0) series.push({label:gname, arr:simResult.pools.hist[gname], cap:simResult.pools.size[gname]});
+  }
+  if(simResult.dwellOcc) for(const id of Object.keys(simResult.dwellOcc)){
+    const n=nodeById(id); if(n) series.push({label:n.label, arr:simResult.dwellOcc[id]});
+  }
+  if(!series.length){
+    const {g,W,H}=chartSetup("chOcc",1,Math.max(1,T));
+    g.fillStyle="#9aa4b2"; g.textAlign="center"; g.font="11px sans-serif";
+    g.fillText("設備の定員・滞留ノードのあるシナリオで表示されます", W/2, H/2);
+    return;
+  }
+  let maxV=1;
+  for(const s of series){ if(s.cap) maxV=Math.max(maxV,s.cap); for(let t=0;t<=T;t++) maxV=Math.max(maxV,s.arr[t]); }
+  const {g,H,px,py,padT,padB}=chartSetup("chOcc",maxV,T);
+  series.forEach((s,i)=>{
+    const col=gateColors[i%gateColors.length];
+    if(s.cap){ // 定員: 同色の破線
+      g.strokeStyle=col; g.lineWidth=1; g.setLineDash([4,4]);
+      g.beginPath(); g.moveTo(px(0),py(s.cap)); g.lineTo(px(T),py(s.cap)); g.stroke();
+      g.setLineDash([]);
+    }
+    g.strokeStyle=col; g.lineWidth=1.6; g.beginPath();
+    for(let t=0;t<=T;t+=2){ const x=px(t),y=py(s.arr[t]); t===0?g.moveTo(x,y):g.lineTo(x,y); }
+    g.stroke();
+    g.fillStyle=col; g.textAlign="left";
+    g.fillText(s.label+(s.cap?` (定員${s.cap})`:""), 48+i*110, 14);
+  });
+  g.strokeStyle="rgba(255,255,255,.5)";
+  g.beginPath(); g.moveTo(px(Math.min(playT,T)),padT); g.lineTo(px(Math.min(playT,T)),H-padB); g.stroke();
+}
+function drawChart(id, key, unit){
+  const c=document.getElementById(id), g=c.getContext("2d");
+  const W=c.clientWidth, H=c.clientHeight;
+  c.width=W*devicePixelRatio; c.height=H*devicePixelRatio;
+  g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  g.clearRect(0,0,W,H);
+  if(!simResult) return;
+  const {T} = simResult;
+  const gates = queueNodes();
+  let maxV=1;
+  for(const n of gates){ const a=simResult[key][n.id]; for(let t=0;t<=T;t++) maxV=Math.max(maxV,a[t]); }
+  const padL=42,padR=10,padT=22,padB=18;
+  const px=t=>padL+(W-padL-padR)*t/T, py=v=>H-padB-(H-padT-padB)*v/maxV;
+  // 軸
+  g.strokeStyle="#3d434e"; g.fillStyle="#9aa4b2"; g.font="10px sans-serif"; g.textAlign="right";
+  for(let i=0;i<=4;i++){
+    const v=maxV*i/4, y=py(v);
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(W-padR,y); g.stroke();
+    g.fillText(v>=10?Math.round(v):v.toFixed(1), padL-4, y+3);
+  }
+  g.textAlign="center";
+  for(let m=0;m<=T/60;m+=Math.max(1,Math.round(T/60/6))){
+    g.fillText(m+"分", px(m*60), H-4);
+  }
+  // 系列
+  gates.forEach((n,i)=>{
+    const a=simResult[key][n.id];
+    g.strokeStyle=gateColors[i%gateColors.length]; g.lineWidth=1.6;
+    g.beginPath();
+    for(let t=0;t<=T;t+=2){ const x=px(t),y=py(a[t]); t===0?g.moveTo(x,y):g.lineTo(x,y); }
+    g.stroke();
+    g.fillStyle=g.strokeStyle; g.textAlign="left";
+    g.fillText(n.label, padL+6+i*90, 14);
+  });
+  // 現在時刻ライン
+  g.strokeStyle="rgba(255,255,255,.5)";
+  g.beginPath(); g.moveTo(px(Math.min(playT,T)),padT); g.lineTo(px(Math.min(playT,T)),H-padB); g.stroke();
+}
+
+// ---------- プロパティパネル ----------
+function renderProps(){
+  if(simResult) drawCumChart(); // 累積図は選択ボトルネックに追従
+  const box=document.getElementById("props");
+  const title=document.getElementById("propTitle");
+  if(!selected){ title.textContent="プロパティ (未選択)"; box.innerHTML='<div class="small">ノードまたはリンクをクリックすると編集できます。</div>'; return; }
+  if(selected.kind==="node"){
+    const n=nodeById(selected.id);
+    if(!n){ selected=null; return renderProps(); }
+    title.textContent=`プロパティ: ${n.label}`;
+    let html=`<div class="row"><label>名称</label><input type="text" data-f="label" value="${n.label}"></div>`;
+    if(n.type==="source"){
+      html+=`<div class="row"><label>定常流入 [人/分]</label><input type="number" data-f="rate" value="${n.rate}" min="0"></div>
+      <div class="row"><label>一斉到着の間隔 [分] (0=なし)</label><input type="number" data-f="trainInterval" value="${n.trainInterval}" min="0"></div>
+      <div class="row"><label>一斉到着の人数 [人]</label><input type="number" data-f="trainPax" value="${n.trainPax}" min="0"></div>
+      <div class="row"><label>一斉到着の放出時間 [分]</label><input type="number" data-f="releaseMin" value="${n.releaseMin||0.5}" min="0.1" step="0.5"></div>
+      <div class="small">列車到着・レース終了・バス到着などによるパルス的な一斉流入を表現します。指定間隔ごとに指定人数を「放出時間」にわたり均等放出します。目安: 列車降車0.5分 / 送迎バス降車1分 / 教室退出1〜3分 / スタンド退場5〜15分。</div>
+      <div class="row"><label>定常流入の時間変化 (任意)</label><input type="text" data-f="rateProfile" value="${n.rateProfile||""}" placeholder="例: 0:2, 60:5, 120:1"></div>
+      <div class="small">「時刻[分]:人数/分」をカンマ区切りで並べると、定常流入がその時刻から次の指定まで階段状に変化します (夕方ピーク・開店直後の山など)。指定すると上の「定常流入」欄は無視されます。空欄=一定。</div>`;
+    }
+    if(n.type==="gate"){
+      html+=`<div class="row"><label>通路数</label><input type="number" data-f="lanes" value="${n.lanes}" min="1" max="30"></div>
+      <div class="row"><label>処理能力 [人/分/通路]</label><input type="number" data-f="capPerLane" value="${n.capPerLane}" min="1"></div>
+      <div class="small">改札機 約40〜60人/分/通路、階段・扉なども容量換算で表現できます。</div>`;
+      // 同一設備: 更衣室・双方向改札のように、入側と出側が同じ室・設備であることを表す設定
+      html+=`<div class="row"><label>設備名 (空欄=単独ノード)</label><input type="text" data-f="share" value="${n.share||""}"></div>`;
+      if(n.share){
+        const role=n.shareRole||"in";
+        html+=`<div class="row"><label>この設備での役割</label>
+          <select id="propShareRole" style="width:150px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px;">
+            <option value="in"${role==="in"?" selected":""}>入側 (定員を占有)</option>
+            <option value="out"${role==="out"?" selected":""}>出側 (定員を解放)</option>
+          </select></div>
+        <div class="row"><label>設備の定員 [人] (0=無制限)</label><input type="number" data-f="poolSize" value="${n.poolSize||0}" min="0"></div>
+        <div class="row"><label>設備の処理能力 [人/分] (0=各ノード個別)</label><input type="number" data-f="shareCap" value="${n.shareCap||0}" min="0"></div>
+        <div class="small">同じ設備名を持つ滞留ノードは、一つの室・設備 (更衣室、双方向の改札・階段等) の入側・出側として扱われ、滞留面積は常に合算で判定されます。</div>
+        <div class="small">設備の定員 (ロッカー・脱衣スペース等) は入側への入室時に占有され、出側からの退室完了時に解放されます。満杯の間は入側の入室が待たされます。設備の処理能力を設定すると、その設備全体の通過能力を入側・出側で行列人数に応じて分け合います (双方向改札等)。定員・処理能力は設備内で共通 (最大値を採用)。</div>`;
+      }
+      const sc=SCALE;
+      const areaM2=nodeAreaM2(n,sc);
+      const spillOn=document.getElementById("pSpill").checked;
+      html+=`<div class="small">滞留エリア面積: 約${areaM2.toFixed(1)}m² (滞留密度2.5人/m²で約${Math.round(areaM2*QUEUE_DENSITY)}人収容)。${spillOn?"スピルバック有効: この収容数が満杯判定に使われます。":"スピルバック無効: 収容数は表示上の目安で、計算上の行列人数に上限はありません。"}</div>`;
+    }
+    if(n.type==="junction"){
+      html+=`<div class="row"><label>滞留時間 [分] (0=即通過)</label><input type="number" data-f="stayMin" value="${n.stayMin||0}" min="0" step="1"></div>
+      <div class="small">浴場・飲食・観覧など「しばらく滞在してから次へ進む」行動を表現します。到着者を指定時間保持したのち下流へ送出します (収容人数は無制限。下流が満杯の間は退出待ちとして保持)。</div>`;
+    }
+    if(n.type==="sink"){
+      html+=`<div class="row"><label>定常流出 [人/分] </label><input type="number" data-f="outRate" value="${n.outRate||0}" min="0"></div>
+      <div class="row"><label>一斉出発の間隔 [分] (0=なし)</label><input type="number" data-f="vehInterval" value="${n.vehInterval||0}" min="0"></div>
+      <div class="row"><label>一斉出発の人数 [人]</label><input type="number" data-f="vehCap" value="${n.vehCap||100}" min="1"></div>
+      <div class="row"><label>一斉出発の放出時間 [分]</label><input type="number" data-f="releaseMin" value="${n.releaseMin||0.5}" min="0.1" step="0.5"></div>
+      <div class="small">流入ノードと対称の設定です。定常流出は出口等から連続的にはける流れ、一斉出発は電車・バスの発車等で指定間隔ごとに指定人数を「放出時間」にわたり受け入れる流れを表します。目安: 列車乗車0.5分 / バス乗車3〜4分 (停車中に乗り込む時間)。両方0の場合、到着した人は即時に流出します(制約なし)。流出が追いつかない分は流出ノードに行列として滞留します。</div>
+      <div class="row"><label>定常流出の時間変化 (任意)</label><input type="text" data-f="rateProfile" value="${n.rateProfile||""}" placeholder="例: 0:0, 30:10, 60:0"></div>
+      <div class="small">「時刻[分]:人数/分」をカンマ区切りで並べると、定常流出がその時刻から次の指定まで階段状に変化します (出口の時間帯開放・タクシー乗り場の供給変動など)。指定すると上の「定常流出」欄は無視されます。空欄=一定。</div>`;
+    }
+    // 分配設定: 複数の下流へ分岐するノードにのみ表示
+    if(links.filter(l=>l.from===n.id).length>1){
+      html+=`<div class="row"><label>混雑回避で分配</label><input type="checkbox" id="propBalance"${n.balance?" checked":""}></div>
+      <div class="small">オン: 固定の分配比の代わりに、下流の混雑水位 (リンク上の人数+行列を分配比で正規化) が均されるように送出先を配分します。「行列の短い方へ人が流れる」「誘導員が空いた方へ振る」挙動を表現します。分配比は能力バランスの正規化に使われます。</div>`;
+    }
+    // 形状設定 (滞留ノードのみ編集可。流入・流出・分岐は円形・固定サイズ)
+    if(n.type==="gate"){
+      const shape=n.shape||"circle";
+      html+=`<div class="row"><label>形状</label>
+        <select id="propShape" style="width:110px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px;">
+          <option value="circle"${shape==="circle"?" selected":""}>円形</option>
+          <option value="rect"${shape==="rect"?" selected":""}>矩形</option>
+          <option value="poly"${shape==="poly"?" selected":""}>多角形</option>
+        </select></div>`;
+      if(shape==="circle"){
+        html+=`<div class="row"><label>直径 [mm]</label><input type="number" id="propDiam" value="${Math.round((n.r||NODE_R)*2)}" min="400" step="100"></div>
+        <div class="small">図面上の白ハンドルをドラッグしても直径を変更できます。</div>`;
+      } else if(shape==="rect"){
+        html+=`<div class="row"><label>幅 [mm]</label><input type="number" data-f="w" value="${n.w||3000}" min="200" step="100"></div>
+        <div class="row"><label>高さ [mm]</label><input type="number" data-f="h" value="${n.h||2200}" min="200" step="100"></div>
+        <div class="small">図面上の四隅ハンドルをドラッグしても寸法を変更できます (縦横比自由)。</div>`;
+      } else {
+        const drawing = mode==="polytrace" && traceTarget===n;
+        html+=`<div class="row"><button class="btn${drawing?" primary":""}" id="propPolyBtn" style="flex:1;">${drawing?"描画中… (閉じて確定)":"多角形を描画"}</button></div>
+        <div class="small">クリックで頂点追加 / 始点にスナップで閉じて確定 (ダブルクリックまたはEnterでも確定)。作図中は他図形の頂点にスナップします。</div>
+        <div class="small">${n.pts&&n.pts.length?`現在 ${n.pts.length} 頂点。図面上の頂点ハンドルをドラッグで移動できます。`:"未設定 (円形で表示中)"}</div>`;
+      }
+      html+=`<div class="small">サイズはmm単位 (DXF準拠)。3000mm = 3m。</div>`;
+    }
+    box.innerHTML=html;
+    box.querySelectorAll("input").forEach(inp=>{
+      inp.onchange=()=>{
+        pushHistory();
+        const f=inp.dataset.f;
+        n[f] = (f==="label"||f==="share"||f==="rateProfile") ? inp.value : +inp.value;
+        if(f==="rateProfile" && !n.rateProfile.trim()) delete n.rateProfile;
+        if(f==="share"){
+          n.share=(n.share||"").trim();
+          if(!n.share){ delete n.share; }
+          else if(!n.shareRole){ n.shareRole="in"; }
+          renderProps(); // 役割・ロッカー数の入力欄を表示/非表示
+        }
+        scheduleRun(); draw();
+      };
+    });
+    const roleSel=box.querySelector("#propShareRole");
+    if(roleSel) roleSel.onchange=()=>{
+      pushHistory();
+      n.shareRole=roleSel.value;
+      scheduleRun(); draw();
+    };
+    const balInp=box.querySelector("#propBalance");
+    if(balInp) balInp.onchange=()=>{
+      pushHistory();
+      if(balInp.checked) n.balance=true; else delete n.balance;
+      scheduleRun(); draw();
+    };
+    const diamInp=box.querySelector("#propDiam");
+    if(diamInp) diamInp.onchange=()=>{
+      pushHistory();
+      n.r=Math.max(200, (+diamInp.value||0)/2);
+      scheduleRun(); draw();
+    };
+    const shapeSel=box.querySelector("#propShape");
+    if(shapeSel) shapeSel.onchange=()=>{
+      pushHistory();
+      n.shape=shapeSel.value;
+      if(n.shape==="circle" && !n.r) n.r=NODE_R;
+      if(n.shape==="rect"){ if(!n.w)n.w=4000; if(!n.h)n.h=3000; }
+      renderProps(); draw();
+    };
+    const polyBtn=box.querySelector("#propPolyBtn");
+    if(polyBtn) polyBtn.onclick=()=>{
+      if(mode==="polytrace" && traceTarget===n){
+        // 描画中に押したらキャンセルして元の色に戻す
+        tracePts=[]; traceTarget=null; snapPreview=null; setMode("select");
+        renderProps(); draw(); return;
+      }
+      traceTarget=n; tracePts=[]; mode="polytrace";
+      document.querySelectorAll("#toolbar button").forEach(x=>x.classList.remove("active"));
+      renderProps(); draw(); // ボタンを青(描画中)表示に更新
+    };
+  } else {
+    const l=links.find(x=>x.id===selected.id);
+    if(!l){ selected=null; return renderProps(); }
+    const a=nodeById(l.from), b=nodeById(l.to);
+    title.textContent=`プロパティ: リンク ${a.label}→${b.label}`;
+    box.innerHTML=`<div class="row"><label>分配比 (重み)</label><input type="number" data-f="weight" value="${l.weight}" min="0.1" step="0.1"></div>
+    <div class="row"><label>通路幅 [m]</label><input type="number" data-f="width" value="${l.width||3}" min="0.5" step="0.5"></div>
+    <div class="small">分配比は同一ノードから複数リンクへ送出する際の比率、通路幅はヒートマップの密度算出に使用します。</div>`;
+    box.querySelectorAll("input").forEach(inp=>{
+      inp.onchange=()=>{ pushHistory(); l[inp.dataset.f]=+inp.value; scheduleRun(); draw(); };
+    });
+  }
+}
+
+// ---------- マウス操作 ----------
+let mode="select";
+function setMode(m){
+  mode=m; linkFirst=null; pendingPts=[];
+  document.querySelectorAll("#toolbar button").forEach(x=>x.classList.toggle("active",x.dataset.mode===m));
+}
+document.querySelectorAll("#toolbar button").forEach(b=>{
+  b.onclick=()=>setMode(b.dataset.mode);
+});
+let dragNode=null, panning=false, panStart=null, linkFirst=null;
+let dragHandle=null;         // 滞留ノードの形状編集ハンドルのドラッグ状態
+let dragOrigin=null;         // ドラッグ開始時の位置 (Shift直交ロックの基準)
+let dragSnapshot=null;       // ドラッグ開始時の状態 (Undo用・実際に動いた時のみ確定)
+let dragMoved=false;         // ドラッグで実際に移動が起きたか
+
+function axisSnap(p, ref, on){ // Shift押下時、基準点から水平/垂直に近い方へロック
+  if(!on || !ref) return p;
+  return Math.abs(p.x-ref.x) >= Math.abs(p.y-ref.y) ? {x:p.x, y:ref.y} : {x:ref.x, y:p.y};
+}
+let pendingPts=[];           // リンク作成中の中間点
+let dragVertex=null;         // {link, idx} 中間点ドラッグ
+let lastMouse=null;          // ワールド座標のマウス位置 (プレビュー用)
+let tracePts=[];             // 多角形描画中の頂点 (絶対座標)
+let traceTarget=null;        // 多角形を設定するノード
+let snapPreview=null;        // 作図中にスナップ中の頂点 (強調表示用)
+
+// 他図形の頂点候補 (多角形=各頂点 / 矩形=四隅 / 円=中心)。excludeは対象外
+function shapeVertices(exclude){
+  const pts=[];
+  for(const n of nodes){
+    if(n===exclude) continue;
+    if(n.shape==="poly" && n.pts && n.pts.length){
+      for(const p of n.pts) pts.push({x:n.x+p.x, y:n.y+p.y});
+    } else if(n.shape==="rect"){
+      const hw=(n.w||3000)/2, hh=(n.h||2200)/2;
+      pts.push({x:n.x-hw,y:n.y-hh},{x:n.x+hw,y:n.y-hh},{x:n.x+hw,y:n.y+hh},{x:n.x-hw,y:n.y+hh});
+    } else {
+      pts.push({x:n.x, y:n.y});
+    }
+  }
+  return pts;
+}
+// 作図中の頂点スナップ: 近傍の他図形頂点/自身の既存頂点へ吸着。{x,y,hit}
+function snapVertex(w, extra){
+  const tol=11/view.k;
+  let best=null, bestD=tol;
+  const cand=shapeVertices(traceTarget).concat(extra||[]);
+  for(const p of cand){ const d=Math.hypot(w.x-p.x, w.y-p.y); if(d<bestD){ bestD=d; best=p; } }
+  return best ? {x:best.x, y:best.y, hit:true} : {x:w.x, y:w.y, hit:false};
+}
+
+function hitNode(wx,wy){
+  for(let i=nodes.length-1;i>=0;i--){
+    const n=nodes[i];
+    if(pointInNode(n,wx,wy)) return n;
+  }
+  return null;
+}
+function hitLink(wx,wy){
+  for(const l of links){
+    const path=linkPath(l);
+    if(!path) continue;
+    for(let i=0;i<path.length-1;i++){
+      if(distToSeg(wx,wy,path[i].x,path[i].y,path[i+1].x,path[i+1].y)<hitTol()) return l;
+    }
+  }
+  return null;
+}
+function hitLinkSegIndex(l,wx,wy){ // 挿入位置決定用: 最寄り区間のindex
+  const path=linkPath(l);
+  let best=0,bestD=1e18;
+  for(let i=0;i<path.length-1;i++){
+    const d=distToSeg(wx,wy,path[i].x,path[i].y,path[i+1].x,path[i+1].y);
+    if(d<bestD){bestD=d;best=i;}
+  }
+  return best;
+}
+function hitLinkVertex(wx,wy){ // 選択中リンクの中間点ハンドル
+  if(!selected||selected.kind!=="link") return null;
+  const l=links.find(x=>x.id===selected.id);
+  if(!l||!l.pts) return null;
+  const r=8/Math.min(view.k,1.5);
+  for(let i=0;i<l.pts.length;i++){
+    if(Math.hypot(wx-l.pts[i].x,wy-l.pts[i].y)<=r) return {link:l, idx:i};
+  }
+  return null;
+}
+function finishPolyTrace(){
+  // ダブルクリック確定時などに生じる近接重複頂点を除去
+  tracePts=tracePts.filter((p,i)=>i===0 || Math.hypot(p.x-tracePts[i-1].x,p.y-tracePts[i-1].y)>hitTol()/2);
+  if(traceTarget && tracePts.length>=3){
+    pushHistory();
+    // 重心を新しいアンカーにし、相対座標で保存
+    const cx=tracePts.reduce((s,p)=>s+p.x,0)/tracePts.length;
+    const cy=tracePts.reduce((s,p)=>s+p.y,0)/tracePts.length;
+    traceTarget.shape="poly";
+    traceTarget.pts=tracePts.map(p=>({x:p.x-cx,y:p.y-cy}));
+    traceTarget.x=cx; traceTarget.y=cy;
+    scheduleRun();
+  }
+  tracePts=[]; traceTarget=null; snapPreview=null; mode="select";
+  document.querySelectorAll("#toolbar button").forEach(x=>x.classList.toggle("active",x.dataset.mode==="select"));
+  renderProps(); draw();
+}
+function distToSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,len2=dx*dx+dy*dy;
+  let t=len2?((px-x1)*dx+(py-y1)*dy)/len2:0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(x1+dx*t), py-(y1+dy*t));
+}
+
+cv.addEventListener("mousedown", e=>{
+  const r=cv.getBoundingClientRect();
+  const w=toWorld(e.clientX-r.left, e.clientY-r.top);
+  // 中ボタン(ホイールボタン)ドラッグ: 常に画面パン
+  if(e.button===1){ e.preventDefault(); panning=true; panStart={x:e.clientX-view.x, y:e.clientY-view.y}; return; }
+  // 下絵の編集モード: 四隅ドラッグで拡大縮小 / ドラッグで移動 / Shift+ドラッグで回転 (左ボタンのみ)
+  if(bgEdit && bg && e.button===0){
+    const c=bgCenter();
+    // 四隅ハンドルの当たり判定 (アスペクト比維持リサイズ)
+    const cor=bgCorners(), hitR=11/view.k;
+    let ci=-1, best=hitR;
+    for(let i=0;i<4;i++){ const d=Math.hypot(w.x-cor[i].x, w.y-cor[i].y); if(d<best){ best=d; ci=i; } }
+    if(ci>=0){
+      const pf=cor[(ci+2)%4]; // 対角の隅=固定点
+      const dl={x:cor[ci].lx-pf.lx, y:cor[ci].ly-pf.ly};
+      const diagLen=Math.hypot(dl.x,dl.y)||1;
+      dragBg={ resize:true, c, Wf:{x:pf.x,y:pf.y}, pfLocal:{x:pf.lx,y:pf.ly},
+               diagLen, u:bgRot(dl.x/diagLen, dl.y/diagLen) };
+      return;
+    }
+    const wc={x:c.x+(bg.tx||0), y:c.y+(bg.ty||0)}; // 下絵中心のワールド座標
+    dragBg={
+      rotate:e.shiftKey,
+      startTx:bg.tx||0, startTy:bg.ty||0, startRot:bg.rot||0,
+      startAng:Math.atan2(w.y-wc.y, w.x-wc.x), startMouse:w
+    };
+    return;
+  }
+  const n=hitNode(w.x,w.y);
+  if(mode==="select"){
+    // 選択中の滞留ノードの形状編集ハンドルを最優先で判定
+    if(selected && selected.kind==="node"){
+      const sn=nodeById(selected.id);
+      if(sn && sn.type==="gate"){
+        const h=hitNodeHandle(sn, w.x, w.y);
+        if(h){
+          dragHandle={node:sn, kind:h.kind, idx:h.idx};
+          if(h.kind==="rect"){ const hw=(sn.w||3000)/2, hh=(sn.h||2200)/2; dragHandle.fixed={x:sn.x-h.sx*hw, y:sn.y-h.sy*hh}; }
+          dragSnapshot=snapshot(); dragMoved=false; draw(); return;
+        }
+      }
+    }
+    const v=hitLinkVertex(w.x,w.y);
+    if(v){ dragVertex=v; dragOrigin={...v.link.pts[v.idx]}; dragSnapshot=snapshot(); dragMoved=false; }
+    else if(n){ selected={kind:"node",id:n.id}; dragNode=n; dragOrigin={x:n.x,y:n.y}; dragSnapshot=snapshot(); dragMoved=false; renderProps(); }
+    else {
+      const l=hitLink(w.x,w.y);
+      if(l){ selected={kind:"link",id:l.id}; renderProps(); }
+      else { selected=null; renderProps(); panning=true; panStart={x:e.clientX-view.x,y:e.clientY-view.y}; }
+    }
+  } else if(["source","junction","gate","sink"].includes(mode)){
+    if(!n){
+      pushHistory();
+      const nn=addNode(mode,w.x,w.y); selected={kind:"node",id:nn.id};
+      setMode("select"); // 配置後は選択モードへ自動復帰
+      renderProps(); scheduleRun();
+    }
+  } else if(mode==="link"){
+    if(n){
+      if(!linkFirst){ linkFirst=n; pendingPts=[]; selected={kind:"node",id:n.id}; renderProps(); }
+      else if(n!==linkFirst){
+        pushHistory();
+        const l=addLink(linkFirst.id,n.id);
+        if(l){ l.pts=pendingPts; selected={kind:"link",id:l.id}; } else selected=null;
+        setMode("select"); // 接続完了後は選択モードへ自動復帰
+        renderProps(); scheduleRun();
+      }
+    } else if(linkFirst){
+      // 中間点を追加 (Shiftで直前の点から水平/垂直)
+      const ref = pendingPts.length ? pendingPts[pendingPts.length-1] : {x:linkFirst.x,y:linkFirst.y};
+      pendingPts.push(axisSnap({x:w.x,y:w.y}, ref, e.shiftKey));
+    }
+  } else if(mode==="polytrace"){
+    // 他図形の頂点にスナップ。無ければShiftで直交ロック
+    const sv=snapVertex(w, tracePts);
+    // 始点にスナップして閉じた場合は確定
+    if(sv.hit && tracePts.length>=3 && Math.hypot(sv.x-tracePts[0].x, sv.y-tracePts[0].y)<1){
+      finishPolyTrace(); return;
+    }
+    const p = sv.hit ? sv : axisSnap({x:w.x,y:w.y}, tracePts[tracePts.length-1], e.shiftKey);
+    tracePts.push({x:p.x, y:p.y});
+  }
+  draw();
+});
+// 右クリック: 選択中リンクの折れ点を削除
+cv.addEventListener("contextmenu", e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect();
+  const w=toWorld(e.clientX-r.left, e.clientY-r.top);
+  const v=hitLinkVertex(w.x,w.y);
+  if(v){ pushHistory(); v.link.pts.splice(v.idx,1); scheduleRun(); draw(); }
+});
+cv.addEventListener("dblclick", e=>{
+  const r=cv.getBoundingClientRect();
+  const w=toWorld(e.clientX-r.left, e.clientY-r.top);
+  if(mode==="polytrace"){ finishPolyTrace(); return; }
+  // 選択中リンク上でダブルクリック → 中間点を挿入
+  if(selected && selected.kind==="link"){
+    const l=links.find(x=>x.id===selected.id);
+    if(l && hitLink(w.x,w.y)===l){
+      pushHistory();
+      const seg=hitLinkSegIndex(l,w.x,w.y);
+      l.pts=l.pts||[];
+      l.pts.splice(seg,0,{x:w.x,y:w.y});
+      scheduleRun(); draw();
+    }
+  }
+});
+window.addEventListener("keydown", e=>{
+  const tag=(document.activeElement||{}).tagName;
+  const typing = tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA";
+  // Ctrl+Z / Cmd+Z: 元に戻す (入力欄フォーカス中はブラウザ標準の文字取消に委ねる)
+  if((e.ctrlKey||e.metaKey) && (e.key==="z"||e.key==="Z") && !e.shiftKey && !typing){
+    e.preventDefault(); undo(); return;
+  }
+  if(e.key==="Escape"){
+    const wasTracing = mode==="polytrace";
+    if(wasTracing){ tracePts=[]; traceTarget=null; snapPreview=null; }
+    setMode("select");
+    if(wasTracing) renderProps(); // 描画ボタンを元の色に戻す
+    draw();
+  }
+  if(e.key==="Enter" && mode==="polytrace") finishPolyTrace();
+  // Del/Backspace: 選択中のノードまたはリンクを削除 (入力欄フォーカス中は無効)
+  if((e.key==="Delete"||e.key==="Backspace") && !typing && selected){
+    pushHistory();
+    if(selected.kind==="node"){
+      const n=nodeById(selected.id);
+      if(n){
+        nodes=nodes.filter(x=>x!==n);
+        links=links.filter(l=>l.from!==n.id&&l.to!==n.id);
+      }
+    } else {
+      links=links.filter(x=>x.id!==selected.id);
+    }
+    selected=null; renderProps(); scheduleRun(); draw();
+  }
+});
+window.addEventListener("mousemove", e=>{
+  const r=cv.getBoundingClientRect();
+  const w=toWorld(e.clientX-r.left, e.clientY-r.top);
+  // プレビュー位置もShiftで直交ロック
+  if(mode==="link" && linkFirst){
+    const ref = pendingPts.length ? pendingPts[pendingPts.length-1] : {x:linkFirst.x,y:linkFirst.y};
+    lastMouse = axisSnap(w, ref, e.shiftKey);
+  } else if(mode==="polytrace"){
+    const sv=snapVertex(w, tracePts);
+    if(sv.hit){ lastMouse={x:sv.x,y:sv.y}; snapPreview={x:sv.x,y:sv.y}; }
+    else { lastMouse = axisSnap(w, tracePts[tracePts.length-1], e.shiftKey); snapPreview=null; }
+  } else {
+    lastMouse = w;
+  }
+  // 編集中: 四隅ハンドル上でカーソルを変更
+  if(bgEdit && bg && !dragBg){
+    const cor=bgCorners(), hitR=11/view.k;
+    const onCorner=cor.some(p=>Math.hypot(w.x-p.x, w.y-p.y)<hitR);
+    cv.style.cursor = onCorner ? "nwse-resize" : "move";
+  } else if(mode==="select" && !dragHandle && !dragNode && selected && selected.kind==="node"){
+    // 選択中の滞留ノードの形状ハンドル上でカーソルを変更
+    const sn=nodeById(selected.id);
+    cv.style.cursor = (sn && sn.type==="gate" && hitNodeHandle(sn, w.x, w.y)) ? "pointer" : "";
+  }
+  if(dragBg && bg){
+    if(dragBg.resize){
+      // 対角(固定点)からマウスまでの対角方向成分から倍率を決定 (アスペクト比維持)
+      const rel={x:w.x-dragBg.Wf.x, y:w.y-dragBg.Wf.y};
+      const s=Math.max(0.02, (rel.x*dragBg.u.x + rel.y*dragBg.u.y)/dragBg.diagLen);
+      bg.scale=s;
+      // 固定点のワールド座標が動かないよう平行移動を補正
+      const rr=bgRot((dragBg.pfLocal.x-dragBg.c.x)*s, (dragBg.pfLocal.y-dragBg.c.y)*s);
+      bg.tx=dragBg.Wf.x - dragBg.c.x - rr.x;
+      bg.ty=dragBg.Wf.y - dragBg.c.y - rr.y;
+      syncBgInputs(); draw();
+      return;
+    }
+    if(dragBg.rotate){
+      const c=bgCenter();
+      const wc={x:c.x+dragBg.startTx, y:c.y+dragBg.startTy};
+      const ang=Math.atan2(w.y-wc.y, w.x-wc.x);
+      bg.rot=dragBg.startRot + (ang-dragBg.startAng)*180/Math.PI;
+    } else {
+      bg.tx=dragBg.startTx + (w.x-dragBg.startMouse.x);
+      bg.ty=dragBg.startTy + (w.y-dragBg.startMouse.y);
+    }
+    syncBgInputs(); draw();
+    return;
+  }
+  if(dragHandle){
+    if(!dragMoved && dragSnapshot){ commitHistory(dragSnapshot); dragMoved=true; }
+    const n=dragHandle.node;
+    if(dragHandle.kind==="circle"){
+      n.r=Math.max(200, Math.hypot(w.x-n.x, w.y-n.y));
+    } else if(dragHandle.kind==="rect"){
+      const f=dragHandle.fixed;
+      n.w=Math.max(200, Math.abs(w.x-f.x)); n.h=Math.max(200, Math.abs(w.y-f.y));
+      n.x=(w.x+f.x)/2; n.y=(w.y+f.y)/2;
+    } else if(dragHandle.kind==="poly" && n.pts){
+      // 他図形の頂点にスナップしつつ頂点を移動
+      const sv=snapVertex(w, []);
+      n.pts[dragHandle.idx]={x:sv.x-n.x, y:sv.y-n.y};
+    }
+    draw(); return;
+  }
+  if(dragVertex){
+    if(!dragMoved && dragSnapshot){ commitHistory(dragSnapshot); dragMoved=true; }
+    const p=axisSnap(w, dragOrigin, e.shiftKey);
+    dragVertex.link.pts[dragVertex.idx]={x:p.x,y:p.y}; draw();
+  } else if(dragNode){
+    if(!dragMoved && dragSnapshot){ commitHistory(dragSnapshot); dragMoved=true; }
+    const p=axisSnap(w, dragOrigin, e.shiftKey);
+    dragNode.x=p.x; dragNode.y=p.y; draw();
+  } else if(panning){
+    view.x=e.clientX-panStart.x; view.y=e.clientY-panStart.y; draw();
+  } else if((mode==="link"&&linkFirst) || mode==="polytrace"){
+    draw(); // プレビュー更新
+  }
+});
+window.addEventListener("mouseup", ()=>{
+  if(dragNode||dragVertex){ scheduleRun(); } // 距離が変わる=歩行時間が変わる
+  if(dragHandle){ scheduleRun(); renderProps(); } // 形状変更→面積・収容が変わる、数値欄も更新
+  dragNode=null; dragVertex=null; dragOrigin=null; panning=false; dragBg=null; dragHandle=null;
+  dragSnapshot=null; dragMoved=false;
+});
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  // 下絵の編集モードでもホイールは画面ズーム (下絵の拡大縮小は四隅ドラッグ/数値入力)
+  const r=cv.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const k2=Math.max(0.0005,Math.min(2, view.k*(e.deltaY<0?1.12:0.89)));
+  view.x=mx-(mx-view.x)*k2/view.k; view.y=my-(my-view.y)*k2/view.k; view.k=k2;
+  draw();
+},{passive:false});
+
+// ---------- 再生 ----------
+const slider=document.getElementById("timeSlider");
+const timeLabel=document.getElementById("timeLabel");
+slider.oninput=()=>{ playT=+slider.value; updateTimeLabel(); draw(); drawCharts(); };
+document.getElementById("btnPlay").onclick=function(){
+  playing=!playing; this.textContent=playing?"⏸ 停止":"▶ 再生";
+  if(playing) tick();
+};
+function stopPlayback(){
+  if(!playing) return;
+  playing=false;
+  document.getElementById("btnPlay").textContent="▶ 再生";
+}
+function tick(){
+  if(!playing||!simResult) { playing=false; document.getElementById("btnPlay").textContent="▶ 再生"; return; }
+  playT+=Math.max(1, Math.round(10*(+document.getElementById("pPlaySpeed").value||1)));
+  if(playT>simResult.T){ playT=0; }
+  slider.value=playT; updateTimeLabel(); draw(); drawCharts();
+  requestAnimationFrame(()=>setTimeout(tick,40));
+}
+function updateTimeLabel(){
+  const T=simResult?simResult.T:+slider.max;
+  timeLabel.textContent=`t = ${fmtT(playT)} / ${fmtT(T)}`;
+}
+// シナリオ読込・新規作成時: 再生位置を先頭へ、全体時間を現在の設定値に合わせる
+function resetPlaybackForLoad(){
+  playing=false;
+  document.getElementById("btnPlay").textContent="▶ 再生";
+  playT=0;
+  const durMin=+document.getElementById("pDur").value||60;
+  slider.max=Math.round(durMin*60);
+  slider.value=0;
+  updateTimeLabel();
+}
+
+// ---------- DXF / 画像 読込 ----------
+document.getElementById("fileDxf").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  if(/\.dxf$/i.test(f.name)){
+    const text=await f.text();
+    bg=parseDxf(text);
+    if(!bg||!bg.segs.length){ alert("DXFから表示可能な線分を抽出できませんでした。"); bg=null; }
+    else { bg.tx=0; bg.ty=0; bg.scale=1; bg.rot=0; fitBg(); syncBgInputs(); }
+  } else {
+    const img=new Image();
+    img.onload=()=>{ bg={type:"img",img,fit:1,tx:0,ty:0,scale:1,rot:0}; fitBgImg(); syncBgInputs(); draw(); };
+    img.src=URL.createObjectURL(f);
+    return;
+  }
+  draw();
+};
+function parseDxf(text){
+  // 簡易DXFパーサ: ENTITIESセクションの LINE / LWPOLYLINE / CIRCLE / ARC
+  const lines=text.split(/\r?\n/);
+  const segs=[];
+  let i=0;
+  function circleSegs(cx,cy,r,a0,a1){
+    const n=24, out=[];
+    for(let k=0;k<n;k++){
+      const t0=a0+(a1-a0)*k/n, t1=a0+(a1-a0)*(k+1)/n;
+      out.push([cx+r*Math.cos(t0),cy-r*Math.sin(t0),cx+r*Math.cos(t1),cy-r*Math.sin(t1)]);
+    }
+    return out;
+  }
+  while(i<lines.length-1){
+    const code=lines[i].trim(), val=lines[i+1].trim();
+    if(code==="0" && val==="LINE"){
+      let x1,y1,x2,y2; i+=2;
+      while(i<lines.length-1){
+        const c=lines[i].trim(), v=lines[i+1].trim();
+        if(c==="0") break;
+        if(c==="10")x1=+v; if(c==="20")y1=+v; if(c==="11")x2=+v; if(c==="21")y2=+v;
+        i+=2;
+      }
+      if([x1,y1,x2,y2].every(Number.isFinite)) segs.push([x1,-y1,x2,-y2]);
+      continue;
+    }
+    if(code==="0" && val==="LWPOLYLINE"){
+      const xs=[],ys=[]; let closed=false; i+=2;
+      while(i<lines.length-1){
+        const c=lines[i].trim(), v=lines[i+1].trim();
+        if(c==="0") break;
+        if(c==="10")xs.push(+v); if(c==="20")ys.push(+v);
+        if(c==="70") closed=(+v&1)===1;
+        i+=2;
+      }
+      for(let k=0;k<xs.length-1;k++) segs.push([xs[k],-ys[k],xs[k+1],-ys[k+1]]);
+      if(closed&&xs.length>2) segs.push([xs[xs.length-1],-ys[xs.length-1],xs[0],-ys[0]]);
+      continue;
+    }
+    if(code==="0" && (val==="CIRCLE"||val==="ARC")){
+      let cx,cy,r,a0=0,a1=360; i+=2;
+      while(i<lines.length-1){
+        const c=lines[i].trim(), v=lines[i+1].trim();
+        if(c==="0") break;
+        if(c==="10")cx=+v; if(c==="20")cy=+v; if(c==="40")r=+v;
+        if(c==="50")a0=+v; if(c==="51")a1=+v;
+        i+=2;
+      }
+      if([cx,cy,r].every(Number.isFinite)){
+        if(a1<a0)a1+=360;
+        segs.push(...circleSegs(cx,cy,r,a0*Math.PI/180,a1*Math.PI/180));
+      }
+      continue;
+    }
+    i+=2;
+  }
+  return {type:"dxf",segs};
+}
+function fitBg(){
+  // DXF座標はmm実寸のまま使用 (mの図面のみ1000倍)。原点付近へ平行移動のみ行う
+  const u = document.getElementById("pDxfUnit").value==="m" ? 1000 : 1;
+  let minX=1e18,minY=1e18,maxX=-1e18,maxY=-1e18;
+  for(const s of bg.segs){
+    minX=Math.min(minX,s[0],s[2]); maxX=Math.max(maxX,s[0],s[2]);
+    minY=Math.min(minY,s[1],s[3]); maxY=Math.max(maxY,s[1],s[3]);
+  }
+  bg.segs=bg.segs.map(s=>[(s[0]-minX)*u,(s[1]-minY)*u,(s[2]-minX)*u,(s[3]-minY)*u]);
+  bg.w0=(maxX-minX)*u; bg.h0=(maxY-minY)*u; // 変形の中心算出用に基準サイズを保持
+  // ビューを下絵全体に合わせる
+  const W=cv.clientWidth||800, H=cv.clientHeight||500;
+  const spanX=(maxX-minX)*u||1, spanY=(maxY-minY)*u||1;
+  view.k=Math.min(W/spanX, H/spanY)*0.92;
+  view.x=(W-spanX*view.k)/2; view.y=(H-spanY*view.k)/2;
+  scheduleRun();
+}
+function fitBgImg(){
+  // 画像下絵: 長辺を仮に50m(50000mm)として表示。実寸が異なる場合はDXFの使用を推奨
+  bg.fit = 50000/Math.max(bg.img.width, bg.img.height);
+}
+document.getElementById("pShowBg").onchange=draw;
+document.getElementById("btnFit").onclick=()=>{ fitView(); draw(); };
+
+// ---------- 下絵の編集 ----------
+const btnEditBg=document.getElementById("btnEditBg");
+function setBgEdit(on){
+  bgEdit=on;
+  btnEditBg.classList.toggle("primary", bgEdit);
+  btnEditBg.textContent = bgEdit ? "✓ 編集を終了" : "✎ 下絵の編集";
+  document.getElementById("bgEditPanel").style.display = bgEdit ? "" : "none";
+  cv.style.cursor = bgEdit ? "move" : "";
+  if(bgEdit){
+    document.getElementById("pShowBg").checked=true; syncBgInputs();
+    stopPlayback(); // 下絵の編集中はタイムライン再生を停止
+  }
+}
+btnEditBg.onclick=()=>{
+  if(!bgEdit && !bg){ alert("先にDXFまたは画像を下絵として読み込んでください。"); return; }
+  setBgEdit(!bgEdit);
+  draw();
+};
+function bindBgInput(id, apply){
+  document.getElementById(id).addEventListener("input", e=>{
+    if(!bg) return;
+    const v=parseFloat(e.target.value); if(!Number.isFinite(v)) return;
+    apply(v); draw();
+  });
+}
+bindBgInput("bgX", v=>bg.tx=v*1000);
+bindBgInput("bgY", v=>bg.ty=v*1000);
+bindBgInput("bgScale", v=>bg.scale=Math.max(0.01, v/100));
+bindBgInput("bgRot", v=>bg.rot=v);
+
+// ---------- 実行系 ----------
+let runTimer=null;
+function scheduleRun(){
+  if(!document.getElementById("pAuto").checked) return;
+  clearTimeout(runTimer);
+  runTimer=setTimeout(runSim, 250);
+}
+document.getElementById("btnRun").onclick=runSim;
+// 新規作成: すべて消去して初期設定状態へ
+function newScenario(){
+  if((nodes.length||links.length||bg) &&
+     !confirm("ノード・接続・下絵・計算結果をすべて消去して新規作成しますか?")) return;
+  nodes=[]; links=[]; nextId=1;
+  bg=null; simResult=null; selected=null;
+  setBgEdit(false);
+  setScenarioName("新規シナリオ");
+  clearHistory();
+  // 設定を初期値へ
+  document.getElementById("pDur").value=60;
+  document.getElementById("pSpeed").value=1.2;
+  document.getElementById("pAuto").checked=true;
+  document.getElementById("pSpill").checked=false;
+  document.getElementById("pHeat").checked=true;
+  document.getElementById("pDots").checked=false;
+  document.getElementById("pHeatMode").value="now";
+  document.getElementById("pHeatMax").value=3;
+  document.getElementById("legMax").textContent=3;
+  document.getElementById("pHeatAlpha").value=0.7;
+  document.getElementById("pShowBg").checked=true;
+  document.getElementById("pDxfUnit").value="mm";
+  document.getElementById("fileDxf").value="";
+  // プリセット表示を未選択に戻し、説明を隠す
+  document.getElementById("preset").value="";
+  updatePresetDesc("");
+  // 空キャンバスの初期表示: 画面幅に約80m入る倍率、世界原点を中央に
+  {
+    const W=cv.clientWidth||800, H=cv.clientHeight||500;
+    const k=0.01; // 1px = 100mm → 1.4m半径ノードが約14px半径で表示
+    view={k, x:W/2, y:H/2};
+  }
+  resetPlaybackForLoad();
+  renderProps(); updateSummary(); drawCharts(); draw();
+}
+document.getElementById("btnNew").onclick=newScenario;
+document.getElementById("preset").onchange=e=>{ if(e.target.value) loadPreset(e.target.value); };
+
+// プリセットシナリオのガイド説明 (読込時に「このシナリオの説明」として表示)
+const PRESET_DESC={
+station:`【想定】中規模駅のピーク帯。降りて出る人と、入場して乗る人が同じ設備を使う双方向モデル。
+【動線】出場: ホーム(列車到着) → 階段(下り) → 改札(出場) → 北口/南口
+　　　　入場: 駅入口(45人/分) → 改札(入場) → エスカレーター/階段(上り) → ホーム
+【主な設定】列車: 400人/5分毎+250人/6分毎 (降車30秒) / 改札: 4通路220人/分を設備「改札」として入出場で共用 / 階段: 実幅2.4m・有効幅2.2mで下り143・上り123人/分を設備「階段A/B」として共用 / 入場は混雑回避分配でエスカレーター(60人/分)と階段を選択
+【条件】60分 / 1.3m/s(通勤者) / スピルバックON
+【見どころ】列車到着(タイムラインの緑マーカー)のたびに階段→改札(出場)に行列が立ち、能力を分け合う入場側にも待ちが波及する。エスカレーターを削除すると点検停止時の影響が見られる。`,
+bus:`【想定】競馬場・スタジアム等の終了後、観客がシャトルバス乗り場に集中する一斉退場。
+【動線】スタンドA/B/C(計1,800人・10分で退場) → 出口 → 広場 → 誘導ゲート → 乗車口1/2 → バス発車
+【主な設定】出口: 240人/分(幅3m) / 誘導ゲート: 320人/分・広場320m²・混雑回避で乗車口へ振り分け / 乗車口: 20人/分/バース・待機広場300m²(収容約750人) / バス: 定員70人を5分毎に発車(乗車4分) = 輸送力14人/分/バース
+【条件】90分 / 1.0m/s(高密度の群集) / スピルバックON
+【見どころ】容量が 出口720→誘導320→乗車40→発車28人/分 と細くなる漏斗構造。行列は輸送力律速の乗車口に集中し(最大約700人・待ち約44分)、全員乗車まで約65分かかる。`,
+spa:`【想定】中規模日帰り温浴施設の週末ピーク帯。入館→浴場→(食事処)→退館の循環動線。
+【動線】エントランス → 受付 → 更衣室(入) → 男湯/女湯(滞在45/50分) → 6割は更衣室(出)へ・4割は食事処(滞在30分)を経て更衣室(出) → 精算 → 退館
+【主な設定】来館: 定常2人/分が夕方に向けて2.5人/分へ増える時間変化+送迎バス30人/30分毎 / フロント: 受付と精算がスタッフ2名(8人/分)を設備「フロント」として共用 / 更衣室: 入側と出側が同じ室・ロッカー(男100/女85)を設備として共用。ロッカーは入室時に占有・退室完了時に解放
+【条件】180分 / 1.0m/s(館内) / スピルバックON
+【見どころ】ロッカー占有(占有グラフと赤帯マーカー)が主役。夕方ピーク帯は満杯が1時間半近く続き、入場が最大10分程度待たされる(入場制限に相当)。湯上がり側の遅さや食事処の回遊がロッカー解放を遅らせ、退館側の性能が入場待ちを生む連鎖が見える。`,
+school:`【想定】4階建て校舎。授業終了のチャイムで2〜4階の教室から児童420人が2つの階段で1階へ降りる。
+【動線】各階教室(140人/階・1.5分で退出) → 階段を階の区間ごとに通過、各階の踊り場で下階の流れと合流 → 1F廊下 → 昇降口(下足) → 校庭
+【主な設定】階段: 実幅1.4m(小学校の法定最低幅員)・処理能力は有効幅1.2m×65人/分/m=78人/分で安全側に算定 / 昇降口: 75人/分×3列
+【条件】15分 / 1.1m/s(児童) / スピルバックON
+【見どころ】合流が重なる最下段(2F→1F)に行列が集まり、全員降下は約3.6分。階段区間の能力(=幅員)や片側階段の削除で、幅員・本数の感度検討ができる。昇降口を2列に減らすと階段拡幅が効かなくなる直列律速も試せる。`,
+cafeteria:`【想定】学生食堂の昼休み。開始直後に来場が集中し、座席という定員を食堂利用者と弁当組が取り合う。
+【動線】食堂入口(波250人・5分+後続は12→8→4人/分と漸減) → 券売機 → 配膳 → 着席 → 食事ホール(滞在20分) → 食器返却 → 退出。弁当持参(波60人)は直接着席
+【主な設定】券売機: 5人/分×4台 / 配膳: 10人/分×2列 / 座席: 350席を設備「座席」として着席で占有・返却で解放 / 返却: 10人/分×2列
+【条件】60分 / 1.1m/s(トレイ搬送) / スピルバックON
+【見どころ】混雑が時間差で場所を変える三幕構成 — ①開始直後は券売機に約10分待ちの行列、②十数分で満席(赤帯マーカー)となり席さがし待ちが約8分まで伸びる、③流入が座席回転(17.5人/分)を下回ると解消。券売機増設と座席増設で効く場所が全く違う。`};
+function updatePresetDesc(p){
+  const help=document.getElementById("presetHelp");
+  const body=document.getElementById("presetDescBody");
+  if(p && PRESET_DESC[p]){ body.textContent=PRESET_DESC[p]; help.style.display="block"; }
+  else { body.textContent=""; help.style.display="none"; help.open=false; }
+}
+function loadPreset(p){
+  clearBg(); // プリセット変更時は下絵をクリア
+  // ドロップダウンの表示名 (駅改札 等) をシナリオ名として表示
+  const sel=document.getElementById("preset");
+  const opt=[...sel.options].find(o=>o.value===p);
+  setScenarioName(opt ? opt.text : p);
+  sel.value=p; // 起動時など onchange 以外から呼ばれた場合も表示を同期
+  updatePresetDesc(p);
+  if(p==="station"){ loadSample(); return; }
+  nodes=[]; links=[]; nextId=1;
+  if(p==="bus"){
+    // イベント退場 → シャトルバス乗り場
+    // スタンド(一斉退場) → 出口(滞留) → 広場 → 誘導ゲート(滞留) → 乗車口(滞留) → バス発車(車両制約付き流出)
+    const s1=addNode("source",100,100,"スタンドA");
+    const s2=addNode("source",100,240,"スタンドB");
+    const s3=addNode("source",100,380,"スタンドC");
+    const e1=addNode("gate",240,100,"出口A");
+    const e2=addNode("gate",240,240,"出口B");
+    const e3=addNode("gate",240,380,"出口C");
+    const j =addNode("junction",400,240,"広場");
+    const g0=addNode("gate",560,240,"誘導ゲート");
+    const g1=addNode("gate",760,100,"乗車口1");
+    const g2=addNode("gate",760,380,"乗車口2");
+    const k1=addNode("sink",940,100,"バス発車1");
+    const k2=addNode("sink",940,380,"バス発車2");
+    // バス利用の退場者のみ計1,800人。退場波は1回 (間隔をシミュレーション時間より長く設定)
+    // 放出時間10分: 席を立ってスタンドを出るまでの分散 (レース終了直後の実態)
+    s1.rate=0; s1.trainInterval=120; s1.trainPax=800; s1.releaseMin=10;
+    s2.rate=0; s2.trainInterval=120; s2.trainPax=600; s2.releaseMin=10;
+    s3.rate=0; s3.trainInterval=120; s3.trainPax=400; s3.releaseMin=10;
+    // スタンド出口: 幅3m × 流動係数約80人/分/m = 240人/分
+    e1.capPerLane=240; e1.lanes=1; e1.w=3000; e1.h=4000;
+    e2.capPerLane=240; e2.lanes=1; e2.w=3000; e2.h=4000;
+    e3.capPerLane=240; e3.lanes=1; e3.w=3000; e3.h=4000;
+    // 誘導ゲート: 柵による整列誘導のみ (検札なし) 幅1m×4レーン × 80人/分
+    // 面積: ゲート前の人だまり広場を含め 20m×16m=320m² (収容約800人)
+    // 混雑回避で分配: 誘導員が空いている乗車口へ振り分ける実態を表現
+    g0.capPerLane=80; g0.lanes=4; g0.w=20000; g0.h=16000; g0.balance=true;
+    // バス乗車口: 前扉ICタッチ乗車 約20人/分/扉
+    // 面積: 蛇行列(スネークライン)の待機広場 12m×25m=300m²/バース (収容約750人)
+    g1.capPerLane=20; g1.lanes=1; g1.w=12000; g1.h=25000;
+    g2.capPerLane=20; g2.lanes=1; g2.w=12000; g2.h=25000;
+    // バス発車: 大型バス定員70人(立席込) を5分間隔で発車 → 実効輸送力 14人/分/バース
+    // 放出時間4分: 停車中の約4分間かけて乗り込む (発車間際の駆け込みまで含む)
+    k1.outRate=0; k1.vehInterval=5; k1.vehCap=70; k1.releaseMin=4;
+    k2.outRate=0; k2.vehInterval=5; k2.vehCap=70; k2.releaseMin=4;
+    const L=(a,b,wt,wd)=>{ const l=addLink(a.id,b.id,wt); if(l&&wd) l.width=wd; return l; };
+    L(s1,e1,1,4); L(s2,e2,1,4); L(s3,e3,1,4);   // スタンド→出口
+    L(e1,j,1,4);  L(e2,j,1,4);  L(e3,j,1,4);    // 出口→広場
+    L(j,g0,1,6);                                 // 広場→誘導ゲート
+    L(g0,g1,1,3); L(g0,g2,1,3);                  // 誘導→乗車口 (1:1)
+    L(g1,k1,1,3); L(g2,k2,1,3);                  // 乗車口→バス
+    // 輸送力28人/分に対し1,800人 ≈ 65分かかるため、時間軸を90分に設定 (完了+余裕)
+    document.getElementById("pDur").value=90;
+    // 歩行速度1.0m/s: 高密度の群集歩行 (退場直後は自由歩行より遅い)
+    document.getElementById("pSpeed").value=1.0;
+    // スピルバック考慮ON: 待機広場(320m²/300m²)の収容量が足りるかを検証する構成
+    document.getElementById("pSpill").checked=true;
+  } else if(p==="spa"){
+    // 温浴施設 (循環モデル): 入館 → 受付 → 更衣室(入) → 浴場(滞在) → [4割は食事処(滞在)] → 更衣室(出) → 精算 → 退館
+    // 更衣室は「入る人」と「出る人」が同じ室・同じロッカーを共用 (共用グループで面積+ロッカーを共有)。
+    // ロッカーは入室時に確保され、湯上がりの着衣を終えて退室した時点で解放される。
+    // 食事処は館内着で利用する想定のため、滞在中もロッカーを占有し続ける (回遊が定員需要を押し上げる)。
+    const s  =addNode("source",40,220,"エントランス");
+    const g1 =addNode("gate",170,220,"受付");
+    const j1 =addNode("junction",300,220,"廊下");
+    const gMI=addNode("gate",440,120,"男子更衣室(入)");
+    const gFI=addNode("gate",440,320,"女子更衣室(入)");
+    const jMB=addNode("junction",610,120,"男湯");
+    const jFB=addNode("junction",610,320,"女湯");
+    const jR =addNode("junction",700,220,"食事処");
+    const gMO=addNode("gate",780,120,"男子更衣室(出)");
+    const gFO=addNode("gate",780,320,"女子更衣室(出)");
+    const j2 =addNode("junction",920,220,"ロビー");
+    const g2 =addNode("gate",1030,220,"精算・下足");
+    const k  =addNode("sink",1150,220,"退館");
+    // 週末の午後帯: 定常来館は夕方に向けて山を描く (序盤2人/分 → 90分以降3人/分 → 150分以降2人/分)
+    // + 送迎バス30人/30分毎 (放出時間1分=降車→入館の分散)
+    s.rate=2; s.rateProfile="0:2, 90:2.5, 150:2"; s.trainInterval=30; s.trainPax=30; s.releaseMin=1;
+    // フロント: 受付(入館)と精算(退館)を同じスタッフ2名が対応する (同一設備の共用処理能力)。
+    //   入館対応 約3人/分/名 (靴鍵預かり・会員確認・説明)、退館精算 約4人/分/名 (精算のみで速い)
+    //   → 混在時のフロント全体で約8人/分を行列人数比で分け合う。
+    //   入館ラッシュがフロントを占有すると退館精算が滞り、ロッカー解放の遅れが入場待ちに跳ね返る連鎖も表現される。
+    g1.capPerLane=3; g1.lanes=2; g1.w=8000; g1.h=6000;
+    g1.share="フロント"; g1.shareRole="in"; g1.shareCap=8;
+    // 更衣室: 入側・出側が共用グループで同一室を表す。処理能力 = 同時更衣人数÷平均更衣時間で、
+    // 入り(脱衣 約5人/分)より湯上がり(着衣・整髪・ドライヤー 約3〜4人/分)が遅い。
+    // ロッカー数は男100/女85。占有=在館者数(更衣中+入浴中+食事中)なので、ピーク帯は満杯となり入場が待たされる。
+    gMI.capPerLane=5; gMI.lanes=1; gMI.w=8000; gMI.h=7000; gMI.share="男子更衣室"; gMI.shareRole="in";  gMI.poolSize=100;
+    gMO.capPerLane=4; gMO.lanes=1; gMO.w=8000; gMO.h=7000; gMO.share="男子更衣室"; gMO.shareRole="out"; gMO.poolSize=100;
+    gFI.capPerLane=4; gFI.lanes=1; gFI.w=9000; gFI.h=7000; gFI.share="女子更衣室"; gFI.shareRole="in";  gFI.poolSize=85;
+    gFO.capPerLane=3; gFO.lanes=1; gFO.w=9000; gFO.h=7000; gFO.share="女子更衣室"; gFO.shareRole="out"; gFO.poolSize=85;
+    // 浴場: 平均滞在時間 (入浴+洗体+休憩)。女性はやや長め
+    jMB.stayMin=45; jFB.stayMin=50;
+    // 食事処: 湯上がりの4割が館内着のまま利用、平均滞在30分 (滞在中もロッカーを占有)
+    jR.stayMin=30;
+    // 精算・下足: フロント2名の退館対応 約4人/分/名 (受付と同一設備「フロント」を共用)。前面ロビー 6m×5m
+    g2.capPerLane=4; g2.lanes=2; g2.w=6000; g2.h=5000;
+    g2.share="フロント"; g2.shareRole="out"; g2.shareCap=8;
+    const L=(a,b,wt,wd)=>{ const l=addLink(a.id,b.id,wt); if(l&&wd) l.width=wd; return l; };
+    L(s,g1,1,3);                          // 玄関→受付 幅3m
+    L(g1,j1,1,2.5);                       // 受付→廊下 幅2.5m
+    L(j1,gMI,55,2); L(j1,gFI,45,2);       // 廊下→更衣室 男女=55:45 幅2m
+    L(gMI,jMB,1,1.8); L(gFI,jFB,1,1.8);   // 更衣室→浴場
+    L(jMB,gMO,60,1.8); L(jMB,jR,40,1.5);  // 湯上がり: 6割は着替えへ、4割は食事処へ
+    L(jFB,gFO,60,1.8); L(jFB,jR,40,1.5);
+    L(jR,gMO,55,1.5);  L(jR,gFO,45,1.5);  // 食事の後に着替えて退館 (男女比55:45で復帰)
+    L(gMO,j2,1,2); L(gFO,j2,1,2);         // 更衣室→ロビー
+    L(j2,g2,1,2.5); L(g2,k,1,3);          // ロビー→精算→退館
+    // 時間軸180分: 滞在約1時間の一巡を含め、定常状態とロッカー満杯の発生を観察する
+    document.getElementById("pDur").value=180;
+    // 歩行速度1.0m/s: 館内の緩慢な歩行 (裸足エリア・幅広い年齢層)
+    document.getElementById("pSpeed").value=1.0;
+    document.getElementById("pSpill").checked=true;
+  } else if(p==="school"){
+    // 学校の階段 (授業終了の一斉降下): 4階建て校舎、2・3・4階の教室から東西2つの階段で1階へ
+    // 階段は階の区間ごとに滞留部として分割し、各階の踊り場(分岐)で下階の流入と合流させる。
+    // → 下階の学生が階段を埋めると上階が降りられなくなる(スピルバック)現象を再現できる。
+    // 幅員の検討: 処理能力は「有効幅員[m] × 下り流動係数65人/分/m」で算定する。
+    //   有効幅員 = 実幅 − 手すり・側壁の余裕(概ね0.2m)。法規上の実幅140cm → 有効1.2m → 78人/分。
+    //   幅を変える場合は各区間の処理能力(有効幅で算定)と矩形の幅(実幅)を合わせて変更する。
+    // 階段の数の検討: 片側の階段一式を削除(または追加)し、教室からの分配比で振り分けを調整する。
+    const s4 =addNode("source",380,60,"4F教室(4クラス140人)");
+    const s3 =addNode("source",380,180,"3F教室(4クラス140人)");
+    const s2 =addNode("source",380,300,"2F教室(4クラス140人)");
+    // 西階段 (x=200) / 東階段 (x=560): 区間ゲート+踊り場の繰り返し
+    const w43=addNode("gate",200,120,"西階段4-3F");
+    const w3 =addNode("junction",200,180,"西踊り場3F");
+    const w32=addNode("gate",200,240,"西階段3-2F");
+    const w2 =addNode("junction",200,300,"西踊り場2F");
+    const w21=addNode("gate",200,360,"西階段2-1F");
+    const e43=addNode("gate",560,120,"東階段4-3F");
+    const e3 =addNode("junction",560,180,"東踊り場3F");
+    const e32=addNode("gate",560,240,"東階段3-2F");
+    const e2 =addNode("junction",560,300,"東踊り場2F");
+    const e21=addNode("gate",560,360,"東階段2-1F");
+    const j1 =addNode("junction",380,430,"1F廊下");
+    const gE =addNode("gate",380,500,"昇降口(下足)");
+    const k  =addNode("sink",380,560,"校庭");
+    // 授業終了チャイムで一斉退出: 各階 4クラス×35人=140人 (退出波は1回)
+    // 放出時間1.5分: 片付け・号令から廊下に出るまでの分散
+    for(const s of [s4,s3,s2]){ s.rate=0; s.trainInterval=60; s.trainPax=140; s.releaseMin=1.5; }
+    // 階段区間: 実幅1.4m(小学校の児童用階段の法定最低幅員=140cm)。図面はこの実幅で描画する。
+    // 処理能力は有効幅員1.2m(手すり等で実歩行幅は約0.2m狭い) × 下り約65人/分/m ≒ 78人/分(安全側)。
+    // 面積: 実幅1.4m × 水平投影長8m(階高3.5m+踊り場) = 11.2m² (収容約28人。滞留は全幅を使える)
+    for(const g of [w43,w32,w21,e43,e32,e21]){ g.capPerLane=78; g.lanes=1; g.w=1400; g.h=8000; }
+    // 昇降口: 靴の履き替え 約75人/分/列 × 3列。下足箱前の土間 6m×4m
+    // (2列に減らすと昇降口が階段より先に律速となり、階段拡幅の効果が消える様子も確認できる)
+    gE.capPerLane=75; gE.lanes=3; gE.w=6000; gE.h=4000;
+    const L=(a,b,wt,wd)=>{ const l=addLink(a.id,b.id,wt); if(l&&wd) l.width=wd; return l; };
+    // 教室→階段 (廊下 幅2.5m、東西へ 1:1)
+    L(s4,w43,1,2.5); L(s4,e43,1,2.5);
+    L(s3,w3,1,2.5);  L(s3,e3,1,2.5);
+    L(s2,w2,1,2.5);  L(s2,e2,1,2.5);
+    // 階段の連なり (区間→踊り場→区間、幅1.4m)
+    L(w43,w3,1,1.4); L(w3,w32,1,1.4); L(w32,w2,1,1.4); L(w2,w21,1,1.4);
+    L(e43,e3,1,1.4); L(e3,e32,1,1.4); L(e32,e2,1,1.4); L(e2,e21,1,1.4);
+    // 1階へ (廊下 幅2m → 昇降口 → 校庭)
+    L(w21,j1,1,2); L(e21,j1,1,2);
+    L(j1,gE,1,3); L(gE,k,1,4);
+    // 時間軸15分 (降下完了は数分。グラフの時間軸を現象に合わせる) / 歩行速度1.1m/s (児童)
+    // スピルバック考慮ON: 階段(収容28人)が詰まると踊り場・廊下・教室側へ波及する
+    document.getElementById("pDur").value=15;
+    document.getElementById("pSpeed").value=1.1;
+    document.getElementById("pSpill").checked=true;
+  } else if(p==="cafeteria"){
+    // 学生食堂 (昼休み): 入口 → 券売機 → 配膳 → 着席 → 食事(滞在) → 食器返却 → 退出
+    // 昼休み開始直後に流入が集中する。座席は「設備の定員」で表現し、着席(入側)で占有、
+    // 食器返却(出側)で解放する。満席になると配膳済みの学生が席を待ち、詰まりが配膳・券売機へ波及する。
+    const s  =addNode("source",60,220,"食堂入口");
+    const sB =addNode("source",480,80,"弁当持参");
+    const g1 =addNode("gate",200,220,"券売機");
+    const g2 =addNode("gate",340,220,"配膳カウンター");
+    const g3 =addNode("gate",480,220,"着席(席さがし)");
+    const j  =addNode("junction",620,220,"食事ホール");
+    const g4 =addNode("gate",760,220,"食器返却口");
+    const k  =addNode("sink",880,220,"退出");
+    // 昼休み開始の波250人(直前の授業終了で一斉に到着) + 後続の定常流入
+    // 放出時間5分: 教室から食堂までの移動で到着が分散する
+    // 後続は時間とともに漸減 (0〜30分:12人/分 → 30〜45分:8人/分 → 45分以降:4人/分)
+    s.rate=12; s.rateProfile="0:12, 30:8, 45:4"; s.trainInterval=60; s.trainPax=250; s.releaseMin=5;
+    // 弁当持参組: 券売機・配膳を通らず直接着席し、座席だけを使う (昼休み開始の波60人)
+    sB.rate=0; sB.trainInterval=60; sB.trainPax=60; sB.releaseMin=5;
+    // 券売機: 約5人/分/台(現金・選択操作で約12秒/人) × 4台。前面ホール 8m×8m
+    g1.capPerLane=5; g1.lanes=4; g1.w=8000; g1.h=8000;
+    // 配膳カウンター: 約10人/分/列 × 2列。カウンター前 8m×3m
+    g2.capPerLane=10; g2.lanes=2; g2.w=8000; g2.h=3000;
+    // 着席: 席をさがして座る動作は速い(30人/分)が、設備「座席」の定員350席が空くまで入れない
+    g3.capPerLane=30; g3.lanes=1; g3.w=6000; g3.h=4000;
+    g3.share="座席"; g3.shareRole="in"; g3.poolSize=350;
+    // 食事: 平均滞在20分 (食事+歓談)
+    j.stayMin=20;
+    // 食器返却口: 約10人/分/列 × 2列。返却で座席を解放
+    g4.capPerLane=10; g4.lanes=2; g4.w=4000; g4.h=3000;
+    g4.share="座席"; g4.shareRole="out"; g4.poolSize=350;
+    const L=(a,b,wt,wd)=>{ const l=addLink(a.id,b.id,wt); if(l&&wd) l.width=wd; return l; };
+    L(s,g1,1,3); L(g1,g2,1,3); L(g2,g3,1,3);
+    L(sB,g3,1,2);                          // 弁当持参→直接着席 (座席の競合相手)
+    L(g3,j,1,3); L(j,g4,1,3); L(g4,k,1,3);
+    // 時間軸60分 (昼休み1コマ) / 歩行速度1.1m/s (トレイ搬送・館内歩行)
+    // スピルバック考慮ON: 満席・行列の波及(配膳→券売機→入口)を観察する
+    document.getElementById("pDur").value=60;
+    document.getElementById("pSpeed").value=1.1;
+    document.getElementById("pSpill").checked=true;
+  }
+  nodes.forEach(n=>{ n.x*=100; n.y*=100; }); // 配置座標をmmへ
+  selected=null; simResult=null; clearHistory();
+  resetPlaybackForLoad();
+  fitView(); renderProps(); scheduleRun(); draw();
+}
+
+// ---------- シナリオ保存・読込 ----------
+document.getElementById("btnLoadScn").onclick=()=>{ document.getElementById("fileScn").click(); };
+document.getElementById("btnSaveScn").onclick=()=>{
+  const name=prompt("シナリオ名 (ファイル名になります)", currentScenarioName);
+  if(name===null) return;
+  setScenarioName(name); // 保存名をヘッダーにも反映
+  const data={
+    app:"walking-sim-prototype", version:1, name,
+    params:{
+      durMin:+document.getElementById("pDur").value||30,
+      speed:+document.getElementById("pSpeed").value||1.2,
+      spill:document.getElementById("pSpill").checked,
+      heatMax:+document.getElementById("pHeatMax").value||3
+    },
+    nodes, links
+  };
+  const blob=new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=(name||"scenario").replace(/[\\/:*?"<>|]/g,"_")+".json";
+  a.click();
+};
+document.getElementById("fileScn").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  e.target.value=""; // 同じファイルの再読込を可能に
+  try{
+    const data=JSON.parse(await f.text());
+    if(!Array.isArray(data.nodes)||!Array.isArray(data.links)) throw new Error("形式不正");
+    if(!confirm(`シナリオ「${data.name||f.name}」を読み込みますか?\n(現在の配置は破棄されます)`)) return;
+    nodes=data.nodes; links=data.links;
+    // ID採番を復元 (n12, l34 などの最大値+1)
+    nextId=1;
+    for(const o of [...nodes,...links]){
+      const m=/\d+$/.exec(o.id||"");
+      if(m) nextId=Math.max(nextId, +m[0]+1);
+    }
+    const p=data.params||{};
+    if(p.durMin) document.getElementById("pDur").value=p.durMin;
+    if(p.speed) document.getElementById("pSpeed").value=p.speed;
+    document.getElementById("pSpill").checked=!!p.spill;
+    if(p.heatMax){
+      document.getElementById("pHeatMax").value=p.heatMax;
+      document.getElementById("legMax").textContent=p.heatMax;
+    }
+    clearBg(); // シナリオ読込時は下絵をクリア
+    setScenarioName(data.name||f.name.replace(/\.json$/i,"")); // ヘッダーにシナリオ名を表示
+    // プリセット表示を未選択に戻し、説明を隠す (読込内容はプリセットとは別物のため)
+    document.getElementById("preset").value="";
+    updatePresetDesc("");
+    selected=null; simResult=null; clearHistory();
+    resetPlaybackForLoad();
+    fitView(); renderProps(); scheduleRun(); draw();
+  }catch(err){
+    alert("シナリオファイルを読み込めませんでした: "+err.message);
+  }
+};
+
+// CSV出力 (ボトルネック別の時系列)
+document.getElementById("btnCsv").onclick=()=>{
+  if(!simResult){ alert("先に計算を実行してください。"); return; }
+  const {T,queue,wait}=simResult;
+  const gates=queueNodes();
+  let csv="time_sec,"+gates.map(g=>`${g.label}_行列人数,${g.label}_待ち時間分`).join(",")+"\n";
+  for(let t=0;t<=T;t+=10){
+    csv+=t+","+gates.map(g=>`${queue[g.id][t].toFixed(1)},${wait[g.id][t].toFixed(2)}`).join(",")+"\n";
+  }
+  const blob=new Blob(["﻿"+csv],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="walking-sim-result.csv"; a.click();
+};
+// レポート出力: 図面表示+グラフ4枚+結果サマリーを1枚のPNGに合成してダウンロード
+document.getElementById("btnReport").onclick=()=>{
+  if(!simResult){ alert("先に計算を実行してください。"); return; }
+  const W=1500, pad=16;
+  const mainC=document.getElementById("cv");
+  const mainH=Math.round((W-pad*2)*mainC.clientHeight/Math.max(1,mainC.clientWidth));
+  const chartIds=["chQueue","chWait","chCum","chOcc"];
+  const chartTitles=["行列人数 [人] (ボトルネック別)","待ち時間 [分] (ボトルネック別)",
+    document.getElementById("chCumTitle").textContent,
+    document.getElementById("chOccTitle").textContent];
+  const chartH=210, chartW=(W-pad*2-3*10)/4;
+  const sumLines=document.getElementById("summary").textContent.split("\n");
+  const lineH=17, sumH=sumLines.length*lineH+34;
+  const headH=64;
+  const H=headH+mainH+16+(chartH+22)+16+sumH+pad;
+  const c=document.createElement("canvas"); c.width=W; c.height=H;
+  const g=c.getContext("2d");
+  g.fillStyle="#14171c"; g.fillRect(0,0,W,H);
+  // ヘッダー (シナリオ名+免責)
+  g.fillStyle="#e8edf3"; g.font="bold 20px sans-serif"; g.textAlign="left";
+  g.fillText(`歩行者流動シミュレーション結果  —  シナリオ: ${currentScenarioName}`, pad, 30);
+  g.fillStyle="#9aa4b2"; g.font="12px sans-serif";
+  g.fillText(`社内検討用 (決定論的ネットワーク待ち行列モデル) / 法的用途 (避難安全検証等) には使用できません / 図面は t=${fmtT(Math.min(playT,simResult.T))} の表示`, pad, 52);
+  // 図面 (現在のキャンバス表示をそのまま転写。「全時間の最大密度」モードにしてから出力すると報告向き)
+  g.drawImage(mainC, pad, headH, W-pad*2, mainH);
+  g.strokeStyle="#3d434e"; g.strokeRect(pad, headH, W-pad*2, mainH);
+  // グラフ4枚
+  const cy=headH+mainH+16;
+  chartIds.forEach((id,i)=>{
+    const src=document.getElementById(id);
+    const x=pad+i*(chartW+10);
+    g.fillStyle="#9aa4b2"; g.font="11px sans-serif";
+    g.fillText(chartTitles[i], x, cy+12);
+    if(src.width>0) g.drawImage(src, x, cy+18, chartW, chartH);
+    g.strokeStyle="#3d434e"; g.strokeRect(x, cy+18, chartW, chartH);
+  });
+  // 結果サマリー全文
+  let ty=cy+chartH+18+30;
+  g.fillStyle="#e8edf3"; g.font="bold 13px sans-serif";
+  g.fillText("結果サマリー", pad, ty-12);
+  g.font="12px monospace"; g.fillStyle="#c6cdd6";
+  for(const ln of sumLines){ g.fillText(ln, pad, ty); ty+=lineH; }
+  c.toBlob(blob=>{
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=(currentScenarioName||"scenario").replace(/[\\/:*?"<>|]/g,"_")+"-report.png";
+    a.click();
+  });
+};
+["pDur","pSpeed","pSpill"].forEach(id=>document.getElementById(id).onchange=scheduleRun);
+// ヒートマップ操作は再計算不要 (描画のみ更新)
+document.getElementById("pHeat").onchange=draw;
+document.getElementById("pDots").onchange=draw;
+document.getElementById("pHeatMode").onchange=draw;
+document.getElementById("pHeatAlpha").oninput=draw;
+document.getElementById("pHeatMax").onchange=()=>{
+  document.getElementById("legMax").textContent=document.getElementById("pHeatMax").value;
+  draw();
+};
+
+window.addEventListener("resize", ()=>{ draw(); drawCharts(); });
+
+// 初期化 (プリセット「駅改札」を読み込み、シナリオ名も表示)
+loadPreset("station");
+</script>
+</body>
+</html>
