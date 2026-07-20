@@ -2648,7 +2648,7 @@ document.getElementById("btnReport").onclick=()=>{
   g.fillStyle="#14171c"; g.fillRect(0,0,W,H);
   // ヘッダー (シナリオ名+免責)
   g.fillStyle="#e8edf3"; g.font="bold 20px sans-serif"; g.textAlign="left";
-  g.fillText(`歩行者流動シミュレーション結果  —  シナリオ: ${currentScenarioName}`, pad, 30);
+  g.fillText(`人流検討ツール 結果  —  シナリオ: ${currentScenarioName}`, pad, 30);
   g.fillStyle="#9aa4b2"; g.font="12px sans-serif";
   g.fillText(`社内検討用 (決定論的ネットワーク待ち行列モデル) / 法的用途 (避難安全検証等) には使用できません / 図面は t=${fmtT(Math.min(playT,simResult.T))} の表示`, pad, 52);
   // 図面 (現在のキャンバス表示をそのまま転写。「全時間の最大密度」モードにしてから出力すると報告向き)
