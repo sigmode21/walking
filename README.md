@@ -6,8 +6,7 @@
 
 ## デモ
 
-<!-- 公開後にURLを記載 -->
-GitHub Pages で公開: （URL は公開後に記載します）
+**GitHub Pages で公開中 → https://sigmode21.github.io/Walk/**
 
 ## 主な機能
 
