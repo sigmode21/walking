@@ -9,3 +9,6 @@ walking-sim-result.csv
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 公開しないサンプルシナリオ
+シナリオサンプル（駅改札）.json
