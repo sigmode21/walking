@@ -6,7 +6,7 @@
 
 ## デモ
 
-**GitHub Pages で公開中 → https://sigmode21.github.io/Walking/**
+**GitHub Pages で公開中 → https://sigmode21.github.io/walking/**
 
 ## 主な機能
 
