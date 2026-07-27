@@ -60,6 +60,7 @@
 <header>
   <h1>人流検討ツール（検討用）</h1>
   <span id="scnName" style="display:none;"></span>
+  <button class="btn" id="btnTogglePanel" style="margin-left:auto; white-space:nowrap;" title="右の設定パネルを隠して図面領域を広げます">パネル ▶</button>
 </header>
 <div id="main">
   <div id="toolbar">
@@ -77,6 +78,8 @@
       <b>凡例</b><br>
       ● 緑=流入 / 青=分岐 / 黄=滞留部(改札・階段等) / 灰=流出<br>
       赤バー = 行列人数 / 接続線の色 = 流動量(青→赤)<br>
+      <span id="legDots" style="display:none;">点 = 歩行者 (まばら=歩行 / 密=行列)<br></span>
+      図面ラベル: 占有n/N人 = 設備の定員 / 在圏n人 = 滞留ノード
       <div style="margin-top:4px">密度 0 <span style="display:inline-block;width:90px;height:9px;background:linear-gradient(90deg,#3355ff,#33cc88,#ffe14d,#ff4433);vertical-align:middle;border-radius:2px"></span> <span id="legMax">3</span>人/m²</div>
     </div>
   </div>
@@ -107,7 +110,8 @@
       <input type="file" id="fileScn" accept=".json" style="display:none;">
     </div>
     <div class="small">ノード・接続・下記パラメータをJSONファイルに保存/読込します (DXF下絵は含みません。別途読み込んでください)。</div>
-    <div class="row"><label>シミュレーション時間 [分]</label><input type="number" id="pDur" value="120" min="1" max="180"></div>
+    <div class="row"><label>シミュレーション時間 [分]</label><input type="number" id="pDur" value="120" min="1" max="480"></div>
+    <div class="small">1〜480分 (8時間)。長い時間を設定すると計算量とメモリが比例して増えます (目安: 480分で内部配列は約29万ステップ)。</div>
     <div class="row"><label>歩行速度 [m/s]</label><input type="number" id="pSpeed" value="1.2" step="0.1" min="0.3" max="2.0"></div>
     <div class="row"><label>図面単位</label><span class="small">mm (DXF準拠 / 1000mm = 1m)</span></div>
     <div class="row"><label>自動再計算</label><input type="checkbox" id="pAuto" checked></div>
@@ -172,6 +176,8 @@
       <dd><b>ダブルクリック</b> 折れ点を追加 / <b>ドラッグ</b> 移動 / <b>右クリック</b> 折れ点を削除</dd>
       <dt>キー操作</dt>
       <dd><b>Del</b> 選択対象を削除 / <b>Ctrl+Z</b> 元に戻す / <b>Shift</b> 水平・垂直ロック / <b>Esc</b> キャンセル</dd>
+      <dt>タイムライン</dt>
+      <dd>マーカー (緑=一斉到着 / 青=一斉出発 / 赤帯=設備の定員満杯) クリックでその時刻へジャンプ</dd>
     </dl>
   </div>
 </div>
@@ -190,6 +196,7 @@
       <canvas id="markerBar" title="緑=一斉到着 / 青=一斉出発(車両) / 赤帯=設備の定員満杯 (クリックでジャンプ)" style="width:100%; height:9px; cursor:pointer; display:block;"></canvas>
       <input type="range" id="timeSlider" min="0" max="1800" value="0" style="width:100%;">
     </div>
+    <button class="btn" id="btnToggleCharts" style="white-space:nowrap;" title="下部のグラフを隠して図面領域を広げます">▼ グラフを隠す</button>
   </div>
   <div id="charts">
     <div class="chartBox"><span class="chartTitle">行列人数 [人] (ボトルネック別)</span><canvas id="chQueue"></canvas></div>
@@ -239,20 +246,63 @@ function nodeById(id){ return nodes.find(n=>n.id===id); }
 // ---------- Undo 履歴 (ノード/リンク編集のスナップショット) ----------
 let history = [];
 const HISTORY_MAX = 50;
-function snapshot(){ return JSON.stringify({nodes, links, nextId}); }
+// スナップショットにはシミュレーション条件も含める (プリセット読込・新規作成を取り消せるようにするため)
+function snapshot(){
+  return JSON.stringify({nodes, links, nextId, params:{
+    durMin:document.getElementById("pDur").value,
+    speed:document.getElementById("pSpeed").value,
+    spill:document.getElementById("pSpill").checked
+  }});
+}
 function commitHistory(snap){
   history.push(snap);
   if(history.length>HISTORY_MAX) history.shift();
 }
-function pushHistory(){ commitHistory(snapshot()); }
+function pushHistory(){ commitHistory(snapshot()); markDirty(); }
 function clearHistory(){ history = []; }
 function undo(){
   if(!history.length) return;
   const s = JSON.parse(history.pop());
   nodes = s.nodes; links = s.links; nextId = s.nextId;
+  // 旧形式 (params を持たない) のスナップショットではノード・リンクのみ復元する
+  if(s.params){
+    if(s.params.durMin!==undefined) document.getElementById("pDur").value=s.params.durMin;
+    if(s.params.speed!==undefined) document.getElementById("pSpeed").value=s.params.speed;
+    if(s.params.spill!==undefined) document.getElementById("pSpill").checked=!!s.params.spill;
+  }
   selected = null;
+  markDirty();
   renderProps(); scheduleRun(); draw();
 }
+
+// ---------- 作業内容の保全 (離脱ガード + localStorage への自動保存) ----------
+const AUTOSAVE_KEY = "walking-sim:autosave";
+let dirty = false;
+let autosaveTimer = null;
+function markDirty(){
+  dirty = true;
+  // 編集のたびに書かず、最後の変更から2秒後に1回だけ保存する
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosaveNow, 2000);
+}
+function clearDirty(){
+  dirty = false;
+  clearTimeout(autosaveTimer);
+}
+function autosaveNow(){
+  // プライベートモード・容量超過などで失敗しても動作を止めない (アラートも出さない)
+  try{
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data: buildScenarioData(currentScenarioName)
+    }));
+  }catch(e){ /* 自動保存を諦めるだけ */ }
+}
+window.addEventListener("beforeunload", e=>{
+  if(!dirty) return; // 未編集・保存済みなら確認ダイアログを出さない
+  e.preventDefault();
+  e.returnValue = ""; // 文言は現代のブラウザで無視されるためブラウザ標準に任せる
+});
 
 // ---------- 幾何ヘルパー ----------
 function linkPath(l){
@@ -375,9 +425,10 @@ function loadSample(){
   document.getElementById("pDur").value=60;
   document.getElementById("pSpeed").value=1.3;
   document.getElementById("pSpill").checked=true;
-  selected = null; simResult = null; clearHistory();
+  selected = null; simResult = null;
   resetPlaybackForLoad();
   fitView(); renderProps(); scheduleRun(); draw();
+  clearDirty();
 }
 
 // ---------- シミュレーション本体 (決定論) ----------
@@ -900,7 +951,13 @@ function drawSegLen(p1, p2){ // 区間長ラベル [m] (作図・編集時のラ
 
 function draw(){
   const W=cv.clientWidth, H=cv.clientHeight;
-  if(cv.width!==W*devicePixelRatio){ cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio; }
+  // バッファ寸法は幅・高さ両方を見て更新する (高さのみのリサイズで縦に歪むのを防ぐ)。
+  // devicePixelRatio が 1.25 等の端数でも毎フレーム不一致にならないよう整数へ丸める。
+  const bw=Math.round(W*devicePixelRatio), bh=Math.round(H*devicePixelRatio);
+  if(cv.width!==bw || cv.height!==bh){ cv.width=bw; cv.height=bh; }
+  // 凡例のドット行は歩行者ドット表示がオンのときだけ出す (凡例が画面を覆いすぎないように)
+  document.getElementById("legDots").style.display =
+    document.getElementById("pDots").checked ? "" : "none";
   ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
   ctx.clearRect(0,0,W,H);
   ctx.save();
@@ -2142,16 +2199,31 @@ function resetPlaybackForLoad(){
 // ---------- DXF / 画像 読込 ----------
 document.getElementById("fileDxf").onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
-  if(/\.dxf$/i.test(f.name)){
-    const text=await f.text();
-    bg=parseDxf(text);
-    if(!bg||!bg.segs.length){ alert("DXFから表示可能な線分を抽出できませんでした。"); bg=null; }
-    else { bg.tx=0; bg.ty=0; bg.scale=1; bg.rot=0; fitBg(); syncBgInputs(); }
-  } else {
-    const img=new Image();
-    img.onload=()=>{ bg={type:"img",img,fit:1,tx:0,ty:0,scale:1,rot:0}; fitBgImg(); syncBgInputs(); draw(); };
-    img.src=URL.createObjectURL(f);
-    return;
+  e.target.value=""; // 同じファイルを再選択できるようにする (成功・失敗いずれも)
+  try{
+    if(/\.dxf$/i.test(f.name)){
+      const text=await f.text();
+      bg=parseDxf(text);
+      if(!bg||!bg.segs.length){ alert("DXFから表示可能な線分を抽出できませんでした。"); bg=null; }
+      else { bg.tx=0; bg.ty=0; bg.scale=1; bg.rot=0; fitBg(); syncBgInputs(); }
+    } else {
+      const url=URL.createObjectURL(f);
+      const img=new Image();
+      img.onload=()=>{
+        URL.revokeObjectURL(url);
+        bg={type:"img",img,fit:1,tx:0,ty:0,scale:1,rot:0}; fitBgImg(); syncBgInputs(); draw();
+      };
+      img.onerror=()=>{
+        URL.revokeObjectURL(url);
+        alert("画像ファイルを読み込めませんでした。");
+        bg=null; draw();
+      };
+      img.src=url;
+      return;
+    }
+  }catch(err){
+    alert("下絵ファイルを読み込めませんでした: "+err.message);
+    bg=null;
   }
   draw();
 };
@@ -2279,11 +2351,11 @@ document.getElementById("btnRun").onclick=runSim;
 function newScenario(){
   if((nodes.length||links.length||bg) &&
      !confirm("ノード・接続・下絵・計算結果をすべて消去して新規作成しますか?")) return;
+  if(nodes.length||links.length) pushHistory(); // Ctrl+Z で新規作成を取り消せるように
   nodes=[]; links=[]; nextId=1;
   bg=null; simResult=null; selected=null;
   setBgEdit(false);
   setScenarioName("新規シナリオ");
-  clearHistory();
   // 設定を初期値へ
   document.getElementById("pDur").value=60;
   document.getElementById("pSpeed").value=1.2;
@@ -2309,6 +2381,7 @@ function newScenario(){
   }
   resetPlaybackForLoad();
   renderProps(); updateSummary(); drawCharts(); draw();
+  clearDirty();
 }
 document.getElementById("btnNew").onclick=newScenario;
 document.getElementById("preset").onchange=e=>{ if(e.target.value) loadPreset(e.target.value); };
@@ -2348,6 +2421,7 @@ function updatePresetDesc(p){
   else { body.textContent=""; help.style.display="none"; help.open=false; }
 }
 function loadPreset(p){
+  if(nodes.length||links.length) pushHistory(); // Ctrl+Z でプリセット読込を取り消せるように
   clearBg(); // プリセット変更時は下絵をクリア
   // ドロップダウンの表示名 (駅改札 等) をシナリオ名として表示
   const sel=document.getElementById("preset");
@@ -2553,32 +2627,75 @@ function loadPreset(p){
     document.getElementById("pSpill").checked=true;
   }
   nodes.forEach(n=>{ n.x*=100; n.y*=100; }); // 配置座標をmmへ
-  selected=null; simResult=null; clearHistory();
+  selected=null; simResult=null;
   resetPlaybackForLoad();
   fitView(); renderProps(); scheduleRun(); draw();
+  clearDirty();
 }
 
 // ---------- シナリオ保存・読込 ----------
-document.getElementById("btnLoadScn").onclick=()=>{ document.getElementById("fileScn").click(); };
-document.getElementById("btnSaveScn").onclick=()=>{
-  const name=prompt("シナリオ名 (ファイル名になります)", currentScenarioName);
-  if(name===null) return;
-  setScenarioName(name); // 保存名をヘッダーにも反映
-  const data={
+// シナリオのシリアライズ (ファイル保存と自動保存で共用)
+// version は 1 のまま据え置き。追加フィールドは読込側で「無ければ既定値」として扱うため互換性が保たれる。
+function buildScenarioData(name){
+  return {
     app:"walking-sim-prototype", version:1, name,
     params:{
       durMin:+document.getElementById("pDur").value||30,
       speed:+document.getElementById("pSpeed").value||1.2,
       spill:document.getElementById("pSpill").checked,
-      heatMax:+document.getElementById("pHeatMax").value||3
+      heatMax:+document.getElementById("pHeatMax").value||3,
+      heatMode:document.getElementById("pHeatMode").value,
+      heatAlpha:+document.getElementById("pHeatAlpha").value||0.7,
+      heat:document.getElementById("pHeat").checked,
+      dots:document.getElementById("pDots").checked,
+      auto:document.getElementById("pAuto").checked
     },
     nodes, links
   };
+}
+// シナリオの復元 (ファイル読込と自動保存からの復元で共用)
+// シナリオ名の設定は呼び出し側の責務。各パラメータは存在する場合のみ適用する (旧JSONの後方互換)。
+function applyScenarioData(data){
+  nodes=data.nodes; links=data.links;
+  // ID採番を復元 (n12, l34 などの最大値+1)
+  nextId=1;
+  for(const o of [...nodes,...links]){
+    const m=/\d+$/.exec(o.id||"");
+    if(m) nextId=Math.max(nextId, +m[0]+1);
+  }
+  const p=data.params||{};
+  if(p.durMin) document.getElementById("pDur").value=p.durMin;
+  if(p.speed) document.getElementById("pSpeed").value=p.speed;
+  document.getElementById("pSpill").checked=!!p.spill;
+  if(p.heatMax){
+    document.getElementById("pHeatMax").value=p.heatMax;
+    document.getElementById("legMax").textContent=p.heatMax;
+  }
+  if(p.heatMode!==undefined) document.getElementById("pHeatMode").value=p.heatMode;
+  if(p.heatAlpha!==undefined) document.getElementById("pHeatAlpha").value=p.heatAlpha;
+  if(p.heat!==undefined) document.getElementById("pHeat").checked=!!p.heat;
+  if(p.dots!==undefined) document.getElementById("pDots").checked=!!p.dots;
+  if(p.auto!==undefined) document.getElementById("pAuto").checked=!!p.auto;
+  clearBg(); // シナリオ読込時は下絵をクリア
+  // プリセット表示を未選択に戻し、説明を隠す (読込内容はプリセットとは別物のため)
+  document.getElementById("preset").value="";
+  updatePresetDesc("");
+  selected=null; simResult=null;
+  resetPlaybackForLoad();
+  fitView(); renderProps(); scheduleRun(); draw();
+}
+document.getElementById("btnLoadScn").onclick=()=>{ document.getElementById("fileScn").click(); };
+document.getElementById("btnSaveScn").onclick=()=>{
+  const name=prompt("シナリオ名 (ファイル名になります)", currentScenarioName);
+  if(name===null) return;
+  setScenarioName(name); // 保存名をヘッダーにも反映
+  const data=buildScenarioData(name);
   const blob=new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=(name||"scenario").replace(/[\\/:*?"<>|]/g,"_")+".json";
   a.click();
+  clearDirty();
 };
 document.getElementById("fileScn").onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
@@ -2587,29 +2704,10 @@ document.getElementById("fileScn").onchange=async e=>{
     const data=JSON.parse(await f.text());
     if(!Array.isArray(data.nodes)||!Array.isArray(data.links)) throw new Error("形式不正");
     if(!confirm(`シナリオ「${data.name||f.name}」を読み込みますか?\n(現在の配置は破棄されます)`)) return;
-    nodes=data.nodes; links=data.links;
-    // ID採番を復元 (n12, l34 などの最大値+1)
-    nextId=1;
-    for(const o of [...nodes,...links]){
-      const m=/\d+$/.exec(o.id||"");
-      if(m) nextId=Math.max(nextId, +m[0]+1);
-    }
-    const p=data.params||{};
-    if(p.durMin) document.getElementById("pDur").value=p.durMin;
-    if(p.speed) document.getElementById("pSpeed").value=p.speed;
-    document.getElementById("pSpill").checked=!!p.spill;
-    if(p.heatMax){
-      document.getElementById("pHeatMax").value=p.heatMax;
-      document.getElementById("legMax").textContent=p.heatMax;
-    }
-    clearBg(); // シナリオ読込時は下絵をクリア
     setScenarioName(data.name||f.name.replace(/\.json$/i,"")); // ヘッダーにシナリオ名を表示
-    // プリセット表示を未選択に戻し、説明を隠す (読込内容はプリセットとは別物のため)
-    document.getElementById("preset").value="";
-    updatePresetDesc("");
-    selected=null; simResult=null; clearHistory();
-    resetPlaybackForLoad();
-    fitView(); renderProps(); scheduleRun(); draw();
+    applyScenarioData(data);
+    clearHistory();
+    clearDirty();
   }catch(err){
     alert("シナリオファイルを読み込めませんでした: "+err.message);
   }
@@ -2620,9 +2718,20 @@ document.getElementById("btnCsv").onclick=()=>{
   if(!simResult){ alert("先に計算を実行してください。"); return; }
   const {T,queue,wait}=simResult;
   const gates=queueNodes();
-  let csv="time_sec,"+gates.map(g=>`${g.label}_行列人数,${g.label}_待ち時間分`).join(",")+"\n";
+  // 既存列 (time_sec + ボトルネック別の行列人数・待ち時間) は順序を含めてそのまま維持し、右側に追加する
+  const pools=simResult.pools
+    ? Object.keys(simResult.pools.size).filter(g=>simResult.pools.size[g]>0) : [];
+  const dwells=simResult.dwellOcc
+    ? Object.keys(simResult.dwellOcc).filter(id=>nodeById(id)) : [];
+  let head="time_sec,"+gates.map(g=>`${g.label}_行列人数,${g.label}_待ち時間分`).join(",");
+  for(const g of pools) head+=`,${g}_占有人数`;
+  for(const id of dwells) head+=`,${nodeById(id).label}_在圏人数`;
+  let csv=head+"\n";
   for(let t=0;t<=T;t+=10){
-    csv+=t+","+gates.map(g=>`${queue[g.id][t].toFixed(1)},${wait[g.id][t].toFixed(2)}`).join(",")+"\n";
+    let row=t+","+gates.map(g=>`${queue[g.id][t].toFixed(1)},${wait[g.id][t].toFixed(2)}`).join(",");
+    for(const g of pools) row+=","+(simResult.pools.hist[g][t]||0).toFixed(1);
+    for(const id of dwells) row+=","+(simResult.dwellOcc[id][t]||0).toFixed(1);
+    csv+=row+"\n";
   }
   const blob=new Blob(["﻿"+csv],{type:"text/csv"});
   const a=document.createElement("a");
@@ -2677,7 +2786,7 @@ document.getElementById("btnReport").onclick=()=>{
     a.click();
   });
 };
-["pDur","pSpeed","pSpill"].forEach(id=>document.getElementById(id).onchange=scheduleRun);
+["pDur","pSpeed","pSpill"].forEach(id=>document.getElementById(id).onchange=()=>{ markDirty(); scheduleRun(); });
 // ヒートマップ操作は再計算不要 (描画のみ更新)
 document.getElementById("pHeat").onchange=draw;
 document.getElementById("pDots").onchange=draw;
@@ -2690,8 +2799,58 @@ document.getElementById("pHeatMax").onchange=()=>{
 
 window.addEventListener("resize", ()=>{ draw(); drawCharts(); });
 
-// 初期化 (プリセット「駅改札」を読み込み、シナリオ名も表示)
-loadPreset("station");
+// ---------- パネルの折りたたみ (狭い画面で図面領域を広げる) ----------
+// 切り替え後は必ず draw()/drawCharts() を呼び、キャンバスのバッファ寸法を再計算させる
+document.getElementById("btnToggleCharts").onclick=e=>{
+  const ch=document.getElementById("charts"), bt=document.getElementById("bottom");
+  const show = ch.style.display==="none";
+  ch.style.display = show ? "" : "none";
+  bt.style.height = show ? "" : "auto"; // グラフを隠すときは時間バーの高さまで縮める
+  e.target.textContent = show ? "▼ グラフを隠す" : "▲ グラフを表示";
+  draw(); drawCharts();
+};
+document.getElementById("btnTogglePanel").onclick=e=>{
+  const side=document.getElementById("side");
+  const show = side.style.display==="none";
+  side.style.display = show ? "" : "none";
+  e.target.textContent = show ? "パネル ▶" : "◀ パネル";
+  draw(); drawCharts();
+};
+
+// 初期化: 自動保存があれば復元を尋ね、無ければ新規作成 (プリセット未選択・ノードなし) の状態で始める
+function bootstrap(){
+  let saved=null;
+  // 壊れたデータ・localStorage 無効環境では黙って通常起動する
+  try{
+    const raw=localStorage.getItem(AUTOSAVE_KEY);
+    if(raw){
+      const o=JSON.parse(raw);
+      if(o && o.data && Array.isArray(o.data.nodes) && o.data.nodes.length &&
+         Array.isArray(o.data.links)) saved=o;
+    }
+  }catch(e){ saved=null; }
+  if(saved){
+    try{
+      const when=saved.savedAt ? new Date(saved.savedAt).toLocaleString("ja-JP") : "不明";
+      const ok=confirm(
+        `前回の作業内容 (${when} 時点・ノード${saved.data.nodes.length}個) が見つかりました。復元しますか?\n`+
+        `「キャンセル」を選ぶと新規作成の状態で始めます。`);
+      if(ok){
+        setScenarioName(saved.data.name||"復元したシナリオ");
+        applyScenarioData(saved.data);
+        clearHistory();
+        clearDirty();
+        return;
+      }
+      // 次回また尋ねられるのを防ぐため自動保存データを削除する
+      try{ localStorage.removeItem(AUTOSAVE_KEY); }catch(e){}
+    }catch(e){
+      try{ localStorage.removeItem(AUTOSAVE_KEY); }catch(e2){}
+    }
+  }
+  newScenario(); // 空の状態 (プリセット未選択・ノードなし) で開始
+}
+bootstrap();
 </script>
 </body>
 </html>
