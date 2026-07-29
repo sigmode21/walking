@@ -222,13 +222,13 @@ let nodes = [];   // {id,type,x,y,label, rate?, trainInterval?, trainPax?, capPe
 let links = [];   // {id,from,to,weight}
 let nextId = 1;
 const SCALE = 0.001;   // 図面単位はmm固定: 1単位 = 0.001m
-const NODE_R = 1400;   // 既定ノード半径 1.4m (mm)
+const NODE_R = 1500;   // 既定ノード半径 1.5m = 直径3m (mm)
 
 function addNode(type, x, y, label){
   const n = {id:"n"+(nextId++), type, x, y, label: label || defaultLabel(type)};
   if(type==="source"){ n.rate=10; n.trainInterval=5; n.trainPax=300; }
-  if(type==="gate"){ n.capPerLane=40; n.lanes=3; n.shape="rect"; n.w=3000; n.h=2200; }
-  if(type==="sink"){ n.outRate=0; n.vehInterval=0; n.vehCap=100; }
+  if(type==="gate"){ n.capPerLane=40; n.lanes=3; n.shape="rect"; n.w=3000; n.h=3000; }
+  if(type==="sink"){ n.outRate=10; n.vehInterval=5; n.vehCap=300; n.releaseMin=0.5; }
   if(!n.shape){ n.shape="circle"; n.r=NODE_R; }
   nodes.push(n); return n;
 }
@@ -330,14 +330,24 @@ function pointAtFrac(path, f){ // 折れ線上の位置 f∈[0,1] → {x,y,ang}
   return {x:path[0].x,y:path[0].y,ang:0};
 }
 function nodeBoundR(n){ // 描画補助用の外接半径
-  if(n.shape==="rect") return Math.hypot(n.w||3000,n.h||2200)/2;
+  if(n.shape==="rect") return Math.hypot(n.w||3000,n.h||3000)/2;
   if(n.shape==="poly" && n.pts && n.pts.length)
     return Math.max(...n.pts.map(p=>Math.hypot(p.x,p.y)), NODE_R);
   return n.r||NODE_R;
 }
+// ノード形状の外接範囲 (中心からの上下左右の張り出し量)。ラベル等を形状の縁に沿わせるために使う
+function nodeExtent(n){
+  if(n.shape==="rect") return {l:(n.w||3000)/2, r:(n.w||3000)/2, t:(n.h||3000)/2, b:(n.h||3000)/2};
+  if(n.shape==="poly" && n.pts && n.pts.length>2){
+    const xs=n.pts.map(p=>p.x), ys=n.pts.map(p=>p.y);
+    return {l:-Math.min(...xs), r:Math.max(...xs), t:-Math.min(...ys), b:Math.max(...ys)};
+  }
+  const r=n.r||NODE_R;
+  return {l:r, r:r, t:r, b:r};
+}
 function nodeAreaM2(n, scale){ // ノード形状の面積 [m²]
   let aPx;
-  if(n.shape==="rect") aPx=(n.w||3000)*(n.h||2200);
+  if(n.shape==="rect") aPx=(n.w||3000)*(n.h||3000);
   else if(n.shape==="poly" && n.pts && n.pts.length>2){
     let s=0; const p=n.pts;
     for(let i=0,j=p.length-1;i<p.length;j=i++) s+=(p[j].x+p[i].x)*(p[j].y-p[i].y);
@@ -349,7 +359,7 @@ function hitTol(){ return 8/Math.min(view.k,1.5); } // 画面上約8px相当の�
 function pointInNode(n, wx, wy){
   const dx=wx-n.x, dy=wy-n.y;
   const tol=hitTol();
-  if(n.shape==="rect") return Math.abs(dx)<=(n.w||3000)/2+tol && Math.abs(dy)<=(n.h||2200)/2+tol;
+  if(n.shape==="rect") return Math.abs(dx)<=(n.w||3000)/2+tol && Math.abs(dy)<=(n.h||3000)/2+tol;
   if(n.shape==="poly" && n.pts && n.pts.length>2){
     // point in polygon (ray casting)
     let inside=false;
@@ -886,7 +896,7 @@ function nodeHandles(n){
     const r=n.r||NODE_R;
     [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sy])=>hs.push({x:n.x+sx*r, y:n.y+sy*r, kind:"circle"}));
   } else if(shape==="rect"){
-    const hw=(n.w||3000)/2, hh=(n.h||2200)/2;
+    const hw=(n.w||3000)/2, hh=(n.h||3000)/2;
     [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sy])=>hs.push({x:n.x+sx*hw, y:n.y+sy*hh, kind:"rect", sx, sy}));
   } else if(shape==="poly" && n.pts){
     n.pts.forEach((p,i)=>hs.push({x:n.x+p.x, y:n.y+p.y, kind:"poly", idx:i}));
@@ -947,6 +957,52 @@ function drawSegLen(p1, p2){ // 区間長ラベル [m] (作図・編集時のラ
   ctx.fillRect(mx-tw/2-3*uf, my-14*uf, tw+6*uf, 14*uf);
   ctx.fillStyle="#ffe9a8"; ctx.textAlign="center";
   ctx.fillText(txt, mx, my-3*uf);
+}
+
+// 寸法ラベル (指定点を中心に描く。滞留ノードの形状寸法用)
+function drawDimLabel(x, y, txt){
+  const uf=1/Math.min(view.k,1.5);
+  ctx.font=`${11*uf}px sans-serif`;
+  const tw=ctx.measureText(txt).width;
+  ctx.fillStyle="rgba(20,22,26,.85)";
+  ctx.fillRect(x-tw/2-3*uf, y-7*uf, tw+6*uf, 14*uf);
+  ctx.fillStyle="#ffe9a8"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(txt, x, y);
+  ctx.textBaseline="alphabetic";
+}
+// 滞留ノードの形状寸法をリアルタイム表示 (矩形=長短辺、円形=半径、多角形=変形中の辺)
+function drawNodeDims(n){
+  if(!n) return;
+  const uf=1/Math.min(view.k,1.5), shape=n.shape||"circle";
+  ctx.save();
+  ctx.strokeStyle="rgba(255,233,168,.7)"; ctx.lineWidth=1.2/view.k;
+  ctx.setLineDash([5/view.k, 4/view.k]);
+  if(shape==="rect"){
+    // 多角形と同様、寸法は辺の上に表示する (寸法線は引かない)
+    const hw=(n.w||3000)/2, hh=(n.h||3000)/2;
+    ctx.setLineDash([]);
+    drawSegLen({x:n.x-hw,y:n.y+hh}, {x:n.x+hw,y:n.y+hh}); // 下辺 = 幅
+    drawSegLen({x:n.x+hw,y:n.y-hh}, {x:n.x+hw,y:n.y+hh}); // 右辺 = 高さ
+  } else if(shape==="circle"){
+    const r=n.r||NODE_R;
+    // ドラッグ中はハンドル方向、それ以外は右方向へ半径線を引く
+    let ang=0;
+    if(dragHandle && dragHandle.node===n && lastMouse)
+      ang=Math.atan2(lastMouse.y-n.y, lastMouse.x-n.x);
+    const ex=n.x+Math.cos(ang)*r, ey=n.y+Math.sin(ang)*r;
+    ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.setLineDash([]);
+    drawDimLabel((n.x+ex)/2, (n.y+ey)/2 - 10*uf, "R "+(r*SCALE).toFixed(2)+" m");
+  } else if(shape==="poly" && n.pts && n.pts.length>2 &&
+            dragHandle && dragHandle.node===n && dragHandle.kind==="poly"){
+    // 変形中の頂点に接する2辺のみ寸法表示
+    const m=n.pts.length, i=dragHandle.idx;
+    const abs=k=>({x:n.x+n.pts[(k+m)%m].x, y:n.y+n.pts[(k+m)%m].y});
+    ctx.setLineDash([]);
+    drawSegLen(abs(i-1), abs(i));
+    drawSegLen(abs(i), abs(i+1));
+  }
+  ctx.restore();
 }
 
 function draw(){
@@ -1118,7 +1174,7 @@ function draw(){
   function buildNodePath(n){
     ctx.beginPath();
     if(n.shape==="rect"){
-      ctx.rect(n.x-(n.w||3000)/2, n.y-(n.h||2200)/2, n.w||3000, n.h||2200);
+      ctx.rect(n.x-(n.w||3000)/2, n.y-(n.h||3000)/2, n.w||3000, n.h||3000);
     } else if(n.shape==="poly" && n.pts && n.pts.length>2){
       ctx.moveTo(n.x+n.pts[0].x, n.y+n.pts[0].y);
       for(let i=1;i<n.pts.length;i++) ctx.lineTo(n.x+n.pts[i].x, n.y+n.pts[i].y);
@@ -1130,7 +1186,10 @@ function draw(){
   drawParticles(); // 歩行者ドット (リンク上の歩行中の人)
 
   for(const n of nodes){
+    // 多角形の作図中(頂点未確定)は形状を描かない: 元の矩形・円形は消去済みの状態
+    if(n.shape==="poly" && !(n.pts && n.pts.length>2)) continue;
     const br=nodeBoundR(n);
+    const ext=nodeExtent(n); // ラベル・行列バーは形状の縁を基準に配置する
     const uf=1/Math.min(view.k,1.5); // 画面基準サイズ→図面単位換算
     const isArea = n.type==="gate" || n.shape==="poly"; // 滞留エリア/広場は輪郭主体
     buildNodePath(n);
@@ -1204,7 +1263,7 @@ function draw(){
     // ラベル
     ctx.fillStyle="#d8dee6"; ctx.font=`${12/Math.min(view.k,1.5)}px sans-serif`;
     ctx.textAlign="center";
-    ctx.fillText(n.label, n.x, n.y+br+14*uf);
+    ctx.fillText(n.label, n.x, n.y+ext.b+14*uf);
     // ノード種別ごとの情報ラベル (2行目)
     {
       let info=null;
@@ -1248,7 +1307,7 @@ function draw(){
       }
       if(info){
         ctx.fillStyle="#9aa4b2"; ctx.font=`${10.5/Math.min(view.k,1.5)}px sans-serif`;
-        ctx.fillText(info, n.x, n.y+br+27*uf);
+        ctx.fillText(info, n.x, n.y+ext.b+27*uf);
         ctx.font=`${12/Math.min(view.k,1.5)}px sans-serif`;
       }
     }
@@ -1259,23 +1318,23 @@ function draw(){
         // 平方根スケール: 25人=20px, 100人=40px, 400人=80px, 900人=120px(上限)
         const h=Math.min(120, 4*Math.sqrt(q))*uf;
         ctx.fillStyle="rgba(255,80,70,.85)";
-        ctx.fillRect(n.x-br-10*uf, n.y+br*0.6-h, 7*uf, h);
+        ctx.fillRect(n.x-ext.l-10*uf, n.y+ext.b-h, 7*uf, h);
         ctx.fillStyle="#ff8f85"; ctx.textAlign="left";
-        ctx.fillText(Math.round(q)+"人", n.x-br-2*uf, n.y-br-4*uf);
+        ctx.fillText(Math.round(q)+"人", n.x-ext.l-2*uf, n.y-ext.t-4*uf);
       }
       const w = simResult.wait[n.id][Math.min(playT,simResult.T)]||0;
       if(w>0.05){
         // シミュレーション時間内に捌けない場合は「≥残り時間」表示
         const nearEnd = w >= (simResult.T-Math.min(playT,simResult.T))/60 - 0.02;
         ctx.fillStyle="#ffd76b"; ctx.textAlign="left";
-        ctx.fillText((nearEnd?"待≥":"待")+w.toFixed(1)+"分", n.x+br+4*uf, n.y+4*uf);
+        ctx.fillText((nearEnd?"待≥":"待")+w.toFixed(1)+"分", n.x+ext.r+4*uf, n.y+4*uf);
       }
     }
   }
   // 選択中の滞留ノードには形状編集ハンドルを表示 (選択モード時)
   if(mode==="select" && selected && selected.kind==="node"){
     const sn=nodeById(selected.id);
-    if(sn && sn.type==="gate") drawNodeHandles(sn);
+    if(sn && sn.type==="gate"){ drawNodeHandles(sn); drawNodeDims(sn); }
   }
   ctx.restore();
 }
@@ -1741,13 +1800,13 @@ function renderProps(){
         <div class="small">図面上の白ハンドルをドラッグしても直径を変更できます。</div>`;
       } else if(shape==="rect"){
         html+=`<div class="row"><label>幅 [mm]</label><input type="number" data-f="w" value="${n.w||3000}" min="200" step="100"></div>
-        <div class="row"><label>高さ [mm]</label><input type="number" data-f="h" value="${n.h||2200}" min="200" step="100"></div>
+        <div class="row"><label>高さ [mm]</label><input type="number" data-f="h" value="${n.h||3000}" min="200" step="100"></div>
         <div class="small">図面上の四隅ハンドルをドラッグしても寸法を変更できます (縦横比自由)。</div>`;
       } else {
         const drawing = mode==="polytrace" && traceTarget===n;
-        html+=`<div class="row"><button class="btn${drawing?" primary":""}" id="propPolyBtn" style="flex:1;">${drawing?"描画中… (閉じて確定)":"多角形を描画"}</button></div>
-        <div class="small">クリックで頂点追加 / 始点にスナップで閉じて確定 (ダブルクリックまたはEnterでも確定)。作図中は他図形の頂点にスナップします。</div>
-        <div class="small">${n.pts&&n.pts.length?`現在 ${n.pts.length} 頂点。図面上の頂点ハンドルをドラッグで移動できます。`:"未設定 (円形で表示中)"}</div>`;
+        html+= drawing
+          ? `<div class="small" style="color:var(--accent)">作図中: クリックで頂点追加 / 始点にスナップで閉じて確定 (ダブルクリックまたはEnterでも確定)。作図中は他図形の頂点にスナップします。<b>Escで中止するとこの滞留ノードは削除されます。</b></div>`
+          : `<div class="small">${n.pts&&n.pts.length?`現在 ${n.pts.length} 頂点。図面上の頂点ハンドルをドラッグで移動できます。`:"頂点が未設定です。"}</div>`;
       }
       html+=`<div class="small">サイズはmm単位 (DXF準拠)。3000mm = 3m。</div>`;
     }
@@ -1790,19 +1849,14 @@ function renderProps(){
       pushHistory();
       n.shape=shapeSel.value;
       if(n.shape==="circle" && !n.r) n.r=NODE_R;
-      if(n.shape==="rect"){ if(!n.w)n.w=4000; if(!n.h)n.h=3000; }
-      renderProps(); draw();
-    };
-    const polyBtn=box.querySelector("#propPolyBtn");
-    if(polyBtn) polyBtn.onclick=()=>{
-      if(mode==="polytrace" && traceTarget===n){
-        // 描画中に押したらキャンセルして元の色に戻す
-        tracePts=[]; traceTarget=null; snapPreview=null; setMode("select");
-        renderProps(); draw(); return;
+      if(n.shape==="rect"){ if(!n.w)n.w=3000; if(!n.h)n.h=3000; }
+      if(n.shape==="poly"){
+        // 元の矩形・円形は直ちに消去し、そのまま作図モードへ入る
+        delete n.pts; delete n.w; delete n.h; delete n.r;
+        traceTarget=n; tracePts=[]; snapPreview=null; mode="polytrace";
+        document.querySelectorAll("#toolbar button").forEach(x=>x.classList.remove("active"));
       }
-      traceTarget=n; tracePts=[]; mode="polytrace";
-      document.querySelectorAll("#toolbar button").forEach(x=>x.classList.remove("active"));
-      renderProps(); draw(); // ボタンを青(描画中)表示に更新
+      renderProps(); draw();
     };
   } else {
     const l=links.find(x=>x.id===selected.id);
@@ -1821,6 +1875,8 @@ function renderProps(){
 // ---------- マウス操作 ----------
 let mode="select";
 function setMode(m){
+  // 多角形の作図から抜けるときは、形状が未確定の滞留ノードを破棄する
+  if(mode==="polytrace" && m!=="polytrace") discardTraceTarget();
   mode=m; linkFirst=null; pendingPts=[];
   document.querySelectorAll("#toolbar button").forEach(x=>x.classList.toggle("active",x.dataset.mode===m));
 }
@@ -1852,7 +1908,7 @@ function shapeVertices(exclude){
     if(n.shape==="poly" && n.pts && n.pts.length){
       for(const p of n.pts) pts.push({x:n.x+p.x, y:n.y+p.y});
     } else if(n.shape==="rect"){
-      const hw=(n.w||3000)/2, hh=(n.h||2200)/2;
+      const hw=(n.w||3000)/2, hh=(n.h||3000)/2;
       pts.push({x:n.x-hw,y:n.y-hh},{x:n.x+hw,y:n.y-hh},{x:n.x+hw,y:n.y+hh},{x:n.x-hw,y:n.y+hh});
     } else {
       pts.push({x:n.x, y:n.y});
@@ -1905,6 +1961,18 @@ function hitLinkVertex(wx,wy){ // 選択中リンクの中間点ハンドル
   }
   return null;
 }
+// 多角形の作図を中止: 形状が未確定のまま残る滞留ノードは削除する
+function discardTraceTarget(){
+  const t=traceTarget;
+  tracePts=[]; traceTarget=null; snapPreview=null;
+  if(!t) return;
+  if(t.shape==="poly" && t.pts && t.pts.length>2) return; // 既に確定済みなら残す
+  pushHistory(); // Ctrl+Zで復元できるように
+  nodes=nodes.filter(x=>x!==t);
+  links=links.filter(l=>l.from!==t.id && l.to!==t.id);
+  if(selected && selected.kind==="node" && selected.id===t.id) selected=null;
+  scheduleRun();
+}
 function finishPolyTrace(){
   // ダブルクリック確定時などに生じる近接重複頂点を除去
   tracePts=tracePts.filter((p,i)=>i===0 || Math.hypot(p.x-tracePts[i-1].x,p.y-tracePts[i-1].y)>hitTol()/2);
@@ -1918,7 +1986,9 @@ function finishPolyTrace(){
     traceTarget.x=cx; traceTarget.y=cy;
     scheduleRun();
   }
-  tracePts=[]; traceTarget=null; snapPreview=null; mode="select";
+  // 頂点が3点未満のまま確定した場合は作図中止とみなし、ノードごと破棄する
+  discardTraceTarget();
+  mode="select";
   document.querySelectorAll("#toolbar button").forEach(x=>x.classList.toggle("active",x.dataset.mode==="select"));
   renderProps(); draw();
 }
@@ -1965,7 +2035,7 @@ cv.addEventListener("mousedown", e=>{
         const h=hitNodeHandle(sn, w.x, w.y);
         if(h){
           dragHandle={node:sn, kind:h.kind, idx:h.idx};
-          if(h.kind==="rect"){ const hw=(sn.w||3000)/2, hh=(sn.h||2200)/2; dragHandle.fixed={x:sn.x-h.sx*hw, y:sn.y-h.sy*hh}; }
+          if(h.kind==="rect"){ const hw=(sn.w||3000)/2, hh=(sn.h||3000)/2; dragHandle.fixed={x:sn.x-h.sx*hw, y:sn.y-h.sy*hh}; }
           dragSnapshot=snapshot(); dragMoved=false; draw(); return;
         }
       }
@@ -2045,9 +2115,8 @@ window.addEventListener("keydown", e=>{
   }
   if(e.key==="Escape"){
     const wasTracing = mode==="polytrace";
-    if(wasTracing){ tracePts=[]; traceTarget=null; snapPreview=null; }
-    setMode("select");
-    if(wasTracing) renderProps(); // 描画ボタンを元の色に戻す
+    setMode("select"); // 作図中なら未確定の滞留ノードを破棄する
+    if(wasTracing) renderProps();
     draw();
   }
   if(e.key==="Enter" && mode==="polytrace") finishPolyTrace();
